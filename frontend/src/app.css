@@ -1,0 +1,26 @@
+page {
+  --ink: #24203b;
+  --muted: #564a60;
+  --paper: #fff9ef;
+  --white: #fffdf8;
+  --blue: #343fc4;
+  --sky: #e1e6ff;
+  --plum: #502b87;
+  --violet: #baa5f9;
+  --warm: #ffd668;
+  --orange: #fc8b72;
+  --pink: #fadde5;
+  --red-ink: #903235;
+  --mint: #8de3ce;
+  --green: #245c51;
+  --green-soft: #d7f1e6;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+view, text, input, button, image, scroll-view {
+  box-sizing: border-box;
+}
