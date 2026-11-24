@@ -11,6 +11,7 @@ from app.api.dependencies import CurrentUser, DB, IdempotencyKey, digest
 from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Attempt, AttemptAnswer, GenerationJob, Quiz, Record, RecordSummary, new_id, utcnow
 from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, validate_quiz
+from app.domain.summaries import RULES_VERSION as SUMMARY_RULES_VERSION
 from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
 
 router = APIRouter(responses={401: {"model": ErrorView}, 404: {"model": ErrorView}, 409: {"model": ErrorView}, 422: {"model": ErrorView}})
@@ -227,7 +228,7 @@ def _save_completed_record(db: DB, attempt: Attempt, quiz: Quiz, receipt: Answer
         record_id=record_id,
         status="QUEUED",
         model_name=settings.deepseek_model,
-        rules_version="summary-v1",
+        rules_version=SUMMARY_RULES_VERSION,
         created_at=now,
         next_run_at=now,
         expires_at=now + timedelta(minutes=settings.job_minutes),

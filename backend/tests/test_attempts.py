@@ -209,3 +209,50 @@ def test_history_keyset_handles_identical_completion_times(client, play, fixed_d
     assert page2["items"][0]["recordId"] == min(first, second)
     assert page2["nextCursor"] is None
     assert client.get("/v1/records", params={"cursor": "?invalid"}, headers=headers).status_code == 422
+
+
+def test_summary_retry_is_private_and_can_only_be_accepted_once(client, play, fixed_data, database, login):
+    from app.db import RecordSummary
+
+    headers, _, attempt = play
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data, wrong=True)[-1]["recordId"]
+    path = f"/v1/records/{record_id}/ai-summary/retry"
+    with database.begin() as db:
+        summary = db.get(RecordSummary, record_id)
+        summary.status = "FAILED"
+        summary.error_code = "PROVIDER_TIMEOUT"
+        summary.error_message = "模型超时。"
+        summary.error_retryable = True
+        summary.call_count = 2
+    failure = client.get(f"/v1/records/{record_id}", headers=headers).json()
+    assert failure["aiSummary"]["error"]["retryable"]
+    assert failure["correctCount"] == 19
+    assert client.post(path, headers={**login("device-123999"), "Idempotency-Key": "cross-user"}).status_code == 404
+    key = {**headers, "Idempotency-Key": "first-retry"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: client.post(path, headers=key), range(2)))
+    assert [result.status_code for result in results] == [202, 202]
+    assert [result.json()["status"] for result in results] == ["QUEUED", "QUEUED"]
+    with database.begin() as db:
+        summary = db.get(RecordSummary, record_id)
+        assert summary.retry_count == 1
+        assert summary.call_count == 2
+        summary.status = "FAILED"
+        summary.error_code = "PROVIDER_TIMEOUT"
+        summary.error_retryable = False
+    assert client.post(path, headers=key).json()["status"] == "FAILED"
+    assert client.post(path, headers={**headers, "Idempotency-Key": "new-retry"}).status_code == 409
+
+
+def test_elapsed_summary_can_be_requeued_when_worker_was_offline(client, play, fixed_data, database):
+    from app.db import RecordSummary, utcnow
+
+    headers, _, attempt = play
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    with database.begin() as db:
+        db.get(RecordSummary, record_id).expires_at = utcnow() - timedelta(seconds=1)
+    record = client.get(f"/v1/records/{record_id}", headers=headers).json()
+    assert record["aiSummary"]["status"] == "FAILED"
+    assert record["aiSummary"]["error"]["retryable"]
+    path = f"/v1/records/{record_id}/ai-summary/retry"
+    assert client.post(path, headers={**headers, "Idempotency-Key": "after-deadline"}).json()["status"] == "QUEUED"
