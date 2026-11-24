@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 
@@ -55,5 +56,68 @@ def test_expired_quiz_cannot_be_reopened(client, play, database):
     current = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
     assert current["status"] == "ABANDONED"
     assert current["question"] is None
+
+
+
+def choose(client, headers, attempt_id, question_id, ids):
+    return client.put(
+        f"/v1/attempts/{attempt_id}/answers/{question_id}",
+        json={"selectedOptionIds": ids},
+        headers=headers,
+    )
+
+
+def finish(client, headers, attempt_id, fixed_data, *, wrong=False, skip_last=False):
+    results = []
+    items = fixed_data["questions"][:-1] if skip_last else fixed_data["questions"]
+    for index, item in enumerate(items):
+        correct = item["correctOptionIds"]
+        ids = [next(opt["optionId"] for opt in item["options"] if opt["optionId"] not in correct)] if wrong and index == 0 else correct
+        result = choose(client, headers, attempt_id, item["questionId"], ids)
+        assert result.status_code == 200, result.text
+        results.append(result.json())
+    return results
+
+
+def test_first_submission_is_locked_and_returns_sources(client, play, fixed_data):
+    headers, _, attempt = play
+    question = fixed_data["questions"][0]
+    aid = attempt["attemptId"]
+    qid = question["questionId"]
+    assert choose(client, headers, aid, fixed_data["questions"][1]["questionId"], ["o1"]).json()["code"] == "OUT_OF_ORDER"
+    assert choose(client, headers, aid, qid, ["unknown"]).status_code == 422
+    assert choose(client, headers, aid, qid, ["o1", "o2"]).status_code == 422
+    assert choose(client, headers, aid, qid, []).status_code == 422
+    first = choose(client, headers, aid, qid, question["correctOptionIds"]).json()
+    assert first["isCorrect"]
+    assert first["evidence"][0]["sourceUrl"].startswith("https://")
+    assert first["explanation"]
+    response = choose(client, headers, aid, qid, ["o2"]).json()
+    assert response == first
+    next_question = client.get(f"/v1/attempts/{aid}", headers=headers).json()["question"]
+    assert next_question["index"] == 1
+
+
+@pytest.mark.parametrize("complete_set", [True, False])
+def test_multiple_choice_uses_exact_normalized_set(client, play, fixed_data, complete_set):
+    headers, _, attempt = play
+    aid = attempt["attemptId"]
+    for item in fixed_data["questions"]:
+        correct = item["correctOptionIds"]
+        if item["type"] == "multi":
+            selected = [*reversed(correct), correct[0]] if complete_set else correct[:1]
+            result = choose(client, headers, aid, item["questionId"], selected).json()
+            assert result["isCorrect"] is complete_set
+            assert set(result["correctOptionIds"]) == set(correct)
+            break
+        assert choose(client, headers, aid, item["questionId"], correct).json()["isCorrect"]
+
+
+def test_concurrent_choices_share_the_first_receipt(client, play):
+    headers, _, attempt = play
+    aid, qid = attempt["attemptId"], attempt["question"]["questionId"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda option: choose(client, headers, aid, qid, [option]).json(), ["o1", "o2"]))
+    assert results[0] == results[1]
 
 

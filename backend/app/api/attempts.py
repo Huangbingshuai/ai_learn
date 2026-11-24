@@ -1,17 +1,17 @@
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.api.dependencies import CurrentUser, DB, IdempotencyKey, digest
 from app.api.errors import ApiError, ErrorView, not_found
-from app.db import Attempt, GenerationJob, Quiz, Record, utcnow
-from app.domain.quizzes import RULES_VERSION, Option, QuestionType, validate_quiz
-from app.domain.topics import get_topic_version, load_fixed_quiz
+from app.db import Attempt, AttemptAnswer, GenerationJob, Quiz, Record, RecordSummary, new_id, utcnow
+from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, validate_quiz
+from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
 
 router = APIRouter(responses={401: {"model": ErrorView}, 404: {"model": ErrorView}, 409: {"model": ErrorView}, 422: {"model": ErrorView}})
 local_router = APIRouter(responses={401: {"model": ErrorView}, 409: {"model": ErrorView}, 422: {"model": ErrorView}})
@@ -183,3 +183,112 @@ def read_attempt(attempt_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
     if attempt is None:
         raise not_found()
     return _attempt_view(db, attempt, _owned_quiz(db, attempt.quiz_id, user_id))
+
+
+class SubmitAnswer(BaseModel):
+    selectedOptionIds: list[Identifier] = Field(min_length=1, max_length=24)
+
+
+class AnswerReceipt(BaseModel):
+    question: QuestionView
+    selectedOptionIds: list[str]
+    correctOptionIds: list[str]
+    isCorrect: bool
+    explanation: str
+    evidence: list[EvidenceView]
+    answeredCount: int
+    totalQuestions: int
+    recordId: str | None = None
+
+
+def _save_completed_record(db: DB, attempt: Attempt, quiz: Quiz, receipt: AnswerReceipt, settings) -> None:
+    now = utcnow()
+    earlier_answers = db.scalars(
+        select(AttemptAnswer.receipt)
+        .where(AttemptAnswer.attempt_id == attempt.id)
+        .order_by(AttemptAnswer.question_index)
+    ).all()
+    record_id = new_id()
+    receipt.recordId = record_id
+    record = Record(
+        id=record_id,
+        attempt_id=attempt.id,
+        user_id=attempt.user_id,
+        topic_title=quiz.topic_title,
+        completed_at=now,
+        total_questions=receipt.totalQuestions,
+        correct_count=attempt.correct_count,
+        takeaways=quiz.content["takeaways"],
+        answers=[*earlier_answers, receipt.model_dump(mode="json")],
+    )
+    db.add(record)
+    db.flush()
+    db.add(RecordSummary(
+        record_id=record_id,
+        status="QUEUED",
+        model_name=settings.deepseek_model,
+        rules_version="summary-v1",
+        created_at=now,
+        next_run_at=now,
+        expires_at=now + timedelta(minutes=settings.job_minutes),
+    ))
+
+
+@router.put("/attempts/{attempt_id}/answers/{question_id}")
+def submit_answer(
+    attempt_id: UUID,
+    question_id: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{1,64}$")],
+    body: SubmitAnswer,
+    db: DB,
+    user_id: CurrentUser,
+    request: Request,
+) -> AnswerReceipt:
+    with db.begin():
+        attempt = db.scalar(
+            select(Attempt).where(Attempt.id == str(attempt_id), Attempt.user_id == user_id)
+            .with_for_update()
+        )
+        if attempt is None:
+            raise not_found()
+        previous = db.get(AttemptAnswer, (attempt.id, question_id))
+        if previous is not None:
+            return AnswerReceipt.model_validate(previous.receipt)
+        if attempt.status != "ACTIVE":
+            raise ApiError(409, "ATTEMPT_CLOSED", "本次练习已结束。")
+        quiz = _owned_quiz(db, attempt.quiz_id, user_id)
+        if quiz.expires_at <= utcnow():
+            raise expired_quiz()
+        questions = quiz.content["questions"]
+        index = attempt.answered_count
+        question = questions[index]
+        if question["questionId"] != question_id:
+            raise ApiError(409, "OUT_OF_ORDER", "请先完成当前题目。")
+
+        chosen = set(body.selectedOptionIds)
+        ordered = [option["optionId"] for option in question["options"]]
+        if not chosen <= set(ordered) or (question["type"] != "multi" and len(chosen) != 1):
+            raise ApiError(422, "INVALID_SELECTION", "请选择符合当前题型的选项。")
+        correct = set(question["correctOptionIds"])
+        evidence = {item["evidenceId"]: item for item in quiz.evidence}
+        attempt.answered_count += 1
+        attempt.correct_count += int(chosen == correct)
+        receipt = AnswerReceipt(
+            question=project_question(question, index, quiz.ai_generated),
+            selectedOptionIds=[item for item in ordered if item in chosen],
+            correctOptionIds=[item for item in ordered if item in correct],
+            isCorrect=chosen == correct,
+            explanation=question["explanation"],
+            evidence=[EvidenceView.model_validate(evidence[item]) for item in question["evidenceIds"]],
+            answeredCount=attempt.answered_count,
+            totalQuestions=len(questions),
+        )
+        if attempt.answered_count == len(questions):
+            attempt.status = "PASSED"
+            _save_completed_record(db, attempt, quiz, receipt, request.app.state.settings)
+        db.add(AttemptAnswer(
+            attempt_id=attempt.id,
+            question_id=question_id,
+            question_index=index,
+            receipt=receipt.model_dump(mode="json"),
+        ))
+        return receipt
