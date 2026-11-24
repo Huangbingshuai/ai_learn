@@ -1,14 +1,16 @@
+from base64 import b64decode, urlsafe_b64encode
+from binascii import Error as Base64Error
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from app.api.attempts import AnswerReceipt
 from app.api.dependencies import CurrentUser, DB
-from app.api.errors import ErrorView, not_found
+from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Record, RecordSummary
 from app.domain.quizzes import Takeaway
 from app.domain.summaries import SummaryContent
@@ -79,3 +81,41 @@ def read_record(record_id: UUID, db: DB, user_id: CurrentUser, request: Request)
         answers=record.answers,
         aiSummary=_summary_view(summary, request),
     )
+
+
+class RecordPage(BaseModel):
+    items: list[RecordItem]
+    nextCursor: str | None = None
+
+
+def _parse_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        point = b64decode(cursor.encode("ascii"), altchars=b"-_", validate=True).decode("ascii")
+        value, record_id = point.split("|")
+        completed = datetime.fromisoformat(value)
+        if completed.utcoffset() is None:
+            raise ValueError("Expected a timezone")
+        return completed, str(UUID(record_id))
+    except (ValueError, UnicodeError, Base64Error):
+        raise ApiError(422, "INVALID_CURSOR", "学习记录的翻页位置无效。") from None
+
+
+@router.get("/records")
+def list_records(
+    db: DB,
+    user_id: CurrentUser,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> RecordPage:
+    statement = select(Record).where(Record.user_id == user_id)
+    if cursor is not None:
+        completed, record_id = _parse_cursor(cursor)
+        statement = statement.where(tuple_(Record.completed_at, Record.id) < (completed, record_id))
+    entries = db.scalars(
+        statement.order_by(Record.completed_at.desc(), Record.id.desc()).limit(limit + 1)
+    ).all()
+    next_cursor = None
+    if len(entries) > limit:
+        last = entries[limit - 1]
+        next_cursor = urlsafe_b64encode(f"{last.completed_at.isoformat()}|{last.id}".encode()).decode()
+    return RecordPage(items=[_record_item(entry) for entry in entries[:limit]], nextCursor=next_cursor)

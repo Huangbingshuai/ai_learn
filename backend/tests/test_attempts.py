@@ -173,3 +173,39 @@ def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, 
         assert db.scalar(select(func.count()).select_from(RecordSummary)) == 0
         db.execute(text("ALTER TABLE records DROP CONSTRAINT test_reject_record"))
     assert choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json()["recordId"]
+
+
+def test_history_snapshot_survives_quiz_removal_and_is_private(client, play, fixed_data, login, database):
+    from app.db import Quiz
+
+    headers, quiz_id, attempt = play
+    rid = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    with database.begin() as db:
+        db.delete(db.get(Quiz, quiz_id))
+    response = client.get(f"/v1/records/{rid}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["correctCount"] == 20
+    assert response.json()["answers"][0]["evidence"][0]["text"]
+    other = login("device-888888")
+    assert client.get("/v1/records", headers=other).json()["items"] == []
+    assert client.get(f"/v1/records/{rid}", headers=other).status_code == 404
+
+
+def test_history_keyset_handles_identical_completion_times(client, play, fixed_data, database):
+    from sqlalchemy import update
+
+    from app.db import Record, utcnow
+
+    headers, quiz_id, attempt = play
+    first = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    another = client.post("/v1/attempts", headers={**headers, "Idempotency-Key": "restart"}, json={"quizId": quiz_id}).json()
+    second = finish(client, headers, another["attemptId"], fixed_data)[-1]["recordId"]
+    with database.begin() as db:
+        db.execute(update(Record).values(completed_at=utcnow()))
+
+    page1 = client.get("/v1/records", params={"limit": 1}, headers=headers).json()
+    assert page1["items"][0]["recordId"] == max(first, second)
+    page2 = client.get("/v1/records", params={"limit": 1, "cursor": page1["nextCursor"]}, headers=headers).json()
+    assert page2["items"][0]["recordId"] == min(first, second)
+    assert page2["nextCursor"] is None
+    assert client.get("/v1/records", params={"cursor": "?invalid"}, headers=headers).status_code == 422
