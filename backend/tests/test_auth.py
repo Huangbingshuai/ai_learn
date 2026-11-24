@@ -37,7 +37,9 @@ def test_wechat_login_keeps_provider_identity_private(client, code):
     assert set(login.json()) == {"accessToken", "expiresAt"}
 
 
-@pytest.mark.parametrize("code,status,error", [("bad", 401, "WECHAT_CODE_INVALID"), ("slow", 503, "WECHAT_UNAVAILABLE")])
+@pytest.mark.parametrize(
+    "code,status,error", [("bad", 401, "WECHAT_CODE_INVALID"), ("slow", 503, "WECHAT_UNAVAILABLE")]
+)
 def test_wechat_failure_has_public_error_shape(client, code, status, error):
     result = client.post("/v1/auth/wechat", json={"code": code}, headers={"X-Request-ID": "abc"})
     assert result.status_code == status
@@ -63,17 +65,16 @@ def test_validation_does_not_echo_request_body(client):
 
 
 def test_expired_bearer_cannot_access_resources(database, settings):
-    from fastapi import Depends
     from sqlalchemy import update
 
-    from app.api.dependencies import get_user
+    from app.api.dependencies import CurrentUser
     from app.db import SessionRow, utcnow
     from app.main import create_app
 
     application = create_app(settings, database)
 
     @application.get("/protected")
-    def protected(user_id=Depends(get_user)):
+    def protected(user_id: CurrentUser):
         return {"id": user_id}
 
     with TestClient(application) as client:
@@ -138,3 +139,24 @@ def test_wechat_exchange_timeout_is_sanitized(monkeypatch):
         exchange_wechat_code(Settings(wechat_app_id="app", wechat_app_secret="test-only"), "code")
     assert error.value.code == "WECHAT_UNAVAILABLE"
     assert "raw secret" not in str(error.value)
+
+
+def test_unexpected_errors_have_a_request_id_without_logging_sensitive_values(
+    database, settings, caplog
+):
+    from app.main import create_app
+
+    app = create_app(settings, database)
+
+    @app.get("/failed")
+    def fail_unexpectedly():
+        raise RuntimeError("test secret text")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/failed", headers={"X-Request-ID": "server-failure"})
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "server-failure"
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert "test secret text" not in response.text
+    assert "test secret text" not in caplog.text
+    assert "server-failure" in caplog.text

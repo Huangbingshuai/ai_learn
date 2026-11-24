@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+import logging
 import secrets
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Request
@@ -9,7 +10,12 @@ from sqlalchemy.dialects.postgresql import insert
 from app.api.dependencies import DB, digest
 from app.api.errors import ApiError, ErrorView
 from app.config import Settings
-from app.db import RateLimit, SessionRow, User, utcnow
+from app.db import SessionRow, User, utcnow
+from app.quota import reserve_quota
+
+# HTTPX logs complete URLs at INFO; the WeChat API requires credentials in the query.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 class WechatLogin(BaseModel):
@@ -60,37 +66,22 @@ def exchange_wechat_code(settings: Settings, code: str) -> str:
     return openid
 
 
-def reserve_quota(db, key: str, start: datetime, end: datetime, limit: int) -> None:
-    count = db.scalar(
-        insert(RateLimit)
-        .values(key=key, window_start=start, count=1, expires_at=end)
-        .on_conflict_do_update(
-            index_elements=[RateLimit.key, RateLimit.window_start],
-            set_={"count": RateLimit.count + 1},
-            where=RateLimit.count < limit,
-        )
-        .returning(RateLimit.count)
-    )
-    if count is None:
-        raise ApiError(429, "RATE_LIMITED", "请求次数已达上限，请稍后再试。", True)
-
-
 def issue_session(db, app_id: str, openid: str) -> LoginView:
     with db.begin():
         user_id = db.scalar(
             insert(User)
             .values(app_id=app_id, openid=openid)
-            .on_conflict_do_update(
-                constraint="uq_users_wechat_identity", set_={"openid": openid}
-            )
+            .on_conflict_do_update(constraint="uq_users_wechat_identity", set_={"openid": openid})
             .returning(User.id)
         )
         created = utcnow()
         expires = created + timedelta(hours=12)
         token = secrets.token_urlsafe(32)
-        db.add(SessionRow(
-            user_id=user_id, token_digest=digest(token), created_at=created, expires_at=expires
-        ))
+        db.add(
+            SessionRow(
+                user_id=user_id, token_digest=digest(token), created_at=created, expires_at=expires
+            )
+        )
     return LoginView(accessToken=token, expiresAt=expires)
 
 
@@ -100,7 +91,10 @@ def limit_login(db, request: Request) -> None:
     address = request.client.host if request.client else "unknown"
     with db.begin():
         reserve_quota(
-            db, f"login:{address}", start, start + timedelta(minutes=5),
+            db,
+            f"login:{address}",
+            start,
+            start + timedelta(minutes=5),
             request.app.state.settings.login_limit,
         )
 

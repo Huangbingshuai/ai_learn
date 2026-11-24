@@ -15,7 +15,9 @@ SOURCE_MAX_AGE = timedelta(days=365)
 
 def normalize(text: str) -> str:
     folded = unicodedata.normalize("NFKC", text).casefold()
-    return "".join(ch for ch in folded if not ch.isspace() and not unicodedata.category(ch).startswith("P"))
+    return "".join(
+        ch for ch in folded if not ch.isspace() and not unicodedata.category(ch).startswith("P")
+    )
 
 
 class EvidenceView(BaseModel):
@@ -94,7 +96,8 @@ def match_topic(value: str) -> Topic | None:
         return None
     return next(
         (
-            topic for topic in load_topics()
+            topic
+            for topic in load_topics()
             if normalized in {normalize(title) for title in [topic.title, *topic.aliases]}
         ),
         None,

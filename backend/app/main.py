@@ -7,7 +7,9 @@ from app.config import Settings
 from app.db import make_session_factory
 
 
-def create_app(settings: Settings | None = None, session_factory=None, wechat_exchange=None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, session_factory=None, wechat_exchange=None
+) -> FastAPI:
     settings = settings or Settings()
     api = FastAPI(title="轻知闯关 API", version="1.0.0")
     api.state.settings = settings

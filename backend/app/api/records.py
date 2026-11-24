@@ -9,13 +9,16 @@ from pydantic import BaseModel
 from sqlalchemy import select, tuple_
 
 from app.api.attempts import AnswerReceipt
-from app.api.dependencies import CurrentUser, DB, IdempotencyKey
+from app.api.dependencies import DB, CurrentUser, IdempotencyKey
 from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Record, RecordSummary, utcnow
 from app.domain.quizzes import Takeaway
 from app.domain.summaries import RULES_VERSION, SummaryContent
+from app.quota import QuotaReached, summary_quota_full
 
-router = APIRouter(responses={401: {"model": ErrorView}, 404: {"model": ErrorView}, 422: {"model": ErrorView}})
+router = APIRouter(
+    responses={401: {"model": ErrorView}, 404: {"model": ErrorView}, 422: {"model": ErrorView}}
+)
 JobStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]
 
 
@@ -60,15 +63,20 @@ def _summary_view(summary: RecordSummary | None, request: Request) -> SummaryVie
                 code="PROVIDER_TIMEOUT",
                 message="这次总结暂时没有生成，基础结果已保留。",
                 requestId=request.state.request_id,
-                retryable=summary.retry_count == 0 and summary.call_count < settings.max_summary_calls,
+                retryable=summary.retry_count == 0
+                and summary.call_count < settings.max_summary_calls,
             ),
         )
-    error = ErrorView(
-        code=summary.error_code or "SUMMARY_FAILED",
-        message=summary.error_message or "这次总结没有生成。",
-        requestId=request.state.request_id,
-        retryable=summary.error_retryable,
-    ) if summary.status == "FAILED" else None
+    error = (
+        ErrorView(
+            code=summary.error_code or "SUMMARY_FAILED",
+            message=summary.error_message or "这次总结没有生成。",
+            requestId=request.state.request_id,
+            retryable=summary.error_retryable,
+        )
+        if summary.status == "FAILED"
+        else None
+    )
     return SummaryView(
         status=summary.status,
         content=summary.content if summary.status == "SUCCEEDED" else None,
@@ -128,11 +136,19 @@ def list_records(
     next_cursor = None
     if len(entries) > limit:
         last = entries[limit - 1]
-        next_cursor = urlsafe_b64encode(f"{last.completed_at.isoformat()}|{last.id}".encode()).decode()
-    return RecordPage(items=[_record_item(entry) for entry in entries[:limit]], nextCursor=next_cursor)
+        next_cursor = urlsafe_b64encode(
+            f"{last.completed_at.isoformat()}|{last.id}".encode()
+        ).decode()
+    return RecordPage(
+        items=[_record_item(entry) for entry in entries[:limit]], nextCursor=next_cursor
+    )
 
 
-@router.post("/records/{record_id}/ai-summary/retry", status_code=202, responses={409: {"model": ErrorView}})
+@router.post(
+    "/records/{record_id}/ai-summary/retry",
+    status_code=202,
+    responses={409: {"model": ErrorView}, 429: {"model": ErrorView}},
+)
 def retry_summary(
     record_id: UUID, db: DB, user_id: CurrentUser, idempotency_key: IdempotencyKey, request: Request
 ) -> SummaryView:
@@ -159,6 +175,8 @@ def retry_summary(
             raise ApiError(409, "SUMMARY_NOT_RETRYABLE", "本次总结暂时无法重试，仍可查看基础结果。")
 
         now = utcnow()
+        if summary_quota_full(db, user_id, now, settings):
+            raise QuotaReached
         summary.status = "QUEUED"
         summary.retry_key = idempotency_key
         summary.retry_count += 1

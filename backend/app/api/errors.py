@@ -1,4 +1,6 @@
+import logging
 import re
+from time import monotonic
 from uuid import uuid4
 
 from fastapi import Request
@@ -6,6 +8,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException
+
+from app.quota import QuotaReached
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorView(BaseModel):
@@ -41,13 +47,37 @@ def install_errors(app):
     @app.middleware("http")
     async def request_id(request: Request, call_next):
         incoming = request.headers.get("X-Request-ID", "")
-        request.state.request_id = incoming if re.fullmatch(r"[A-Za-z0-9._-]{1,80}", incoming) else str(uuid4())
-        response = await call_next(request)
+        request.state.request_id = (
+            incoming if re.fullmatch(r"[A-Za-z0-9._-]{1,80}", incoming) else str(uuid4())
+        )
+        started = monotonic()
+        try:
+            response = await call_next(request)
+        except Exception as error:  # noqa: BLE001 - normalize unexpected request failures
+            logger.error(
+                "API request failed request_id=%s exception_type=%s",
+                request.state.request_id,
+                type(error).__name__,
+            )
+            problem = ApiError(500, "INTERNAL_ERROR", "服务暂时不可用，请稍后重试。", True)
+            response = JSONResponse(problem.view(request.state.request_id).model_dump(), 500)
         response.headers["X-Request-ID"] = request.state.request_id
+        logger.info(
+            "API request request_id=%s method=%s status=%d duration_ms=%d",
+            request.state.request_id,
+            request.method,
+            response.status_code,
+            round((monotonic() - started) * 1000),
+        )
         return response
 
     @app.exception_handler(ApiError)
     async def business_error(request: Request, error: ApiError):
+        return JSONResponse(error.view(request.state.request_id).model_dump(), error.status)
+
+    @app.exception_handler(QuotaReached)
+    async def quota_error(request: Request, _: QuotaReached):
+        error = ApiError(429, "RATE_LIMITED", "请求次数已达上限，请稍后再试。", True)
         return JSONResponse(error.view(request.state.request_id).model_dump(), error.status)
 
     @app.exception_handler(RequestValidationError)
@@ -57,8 +87,10 @@ def install_errors(app):
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):
-        error = not_found() if exc.status_code == 404 else ApiError(
-            exc.status_code, "HTTP_ERROR", "请求无法处理。"
+        error = (
+            not_found()
+            if exc.status_code == 404
+            else ApiError(exc.status_code, "HTTP_ERROR", "请求无法处理。")
         )
         return JSONResponse(error.view(request.state.request_id).model_dump(), error.status)
 

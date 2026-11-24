@@ -1,5 +1,5 @@
-from copy import deepcopy
 import json
+from copy import deepcopy
 
 import pytest
 
@@ -10,10 +10,12 @@ from app.domain.quizzes import validate_quiz
 def test_topic_picker_requires_login_and_lists_the_prototype_topics(client, login):
     assert client.get("/v1/topics").status_code == 401
     result = client.get("/v1/topics", headers=login()).json()
-    assert result == {"items": [
-        {"topicKey": "seasons", "title": "四季成因", "art": "earth"},
-        {"topicKey": "moon", "title": "月相变化", "art": "moon"},
-    ]}
+    assert result == {
+        "items": [
+            {"topicKey": "seasons", "title": "四季成因", "art": "earth"},
+            {"topicKey": "moon", "title": "月相变化", "art": "moon"},
+        ]
+    }
 
 
 def test_matching_uses_whitelisted_names_and_normalized_aliases():
@@ -55,7 +57,16 @@ def test_bad_source_versions_are_rejected(monkeypatch, tmp_path, tamper):
 
 
 @pytest.mark.parametrize(
-    "tamper", ["wrong_count", "wrong_id", "duplicate_option", "duplicate_question", "wrong_evidence", "no_multi", "bad_judge"]
+    "tamper",
+    [
+        "wrong_count",
+        "wrong_id",
+        "duplicate_option",
+        "duplicate_question",
+        "wrong_evidence",
+        "no_multi",
+        "bad_judge",
+    ],
 )
 def test_generated_quiz_must_be_valid_and_grounded(tamper):
     raw = deepcopy(topics.load_fixed_quiz())

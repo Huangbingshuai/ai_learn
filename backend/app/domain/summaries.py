@@ -26,8 +26,12 @@ class SummaryContent(QuizModel):
 def validate_summary(raw: dict, record: dict) -> SummaryContent:
     summary = SummaryContent.model_validate(raw)
     answers = {answer["question"]["questionId"]: answer for answer in record["answers"]}
-    mistake_ids = {question_id for question_id, answer in answers.items() if not answer["isCorrect"]}
-    evidence_ids = {source["evidenceId"] for answer in answers.values() for source in answer["evidence"]}
+    mistake_ids = {
+        question_id for question_id, answer in answers.items() if not answer["isCorrect"]
+    }
+    evidence_ids = {
+        source["evidenceId"] for answer in answers.values() for source in answer["evidence"]
+    }
     if bool(summary.mistakeNotes) != bool(mistake_ids):
         raise ValueError("Mistake notes must reflect the actual score")
     for entry in [*summary.knowledgeReview, *summary.mistakeNotes, *summary.reviewSuggestions]:

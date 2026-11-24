@@ -355,3 +355,32 @@ def test_cleanup_expires_queued_tasks_and_preserves_a_live_lease(worker_module, 
         live_job = session.get(db.GenerationJob, live)
         assert live_job.status == "RUNNING"
         assert live_job.lease_token
+
+
+def test_summary_day_quota_binds_real_model_calls_and_keeps_basic_result(
+    worker_module, database, settings, quiz
+):
+    constrained = settings.model_copy(update={"global_daily_summary_limit": 1})
+    first = queue_summary(database, constrained, quiz)
+    second = queue_summary(database, constrained, quiz)
+    ai = FakeAI()
+    item = {"text": "复习地轴倾斜。", "questionIds": ["seasons-01"], "evidenceIds": ["earth-tilt"]}
+    ai.summary = lambda record: {
+        "knowledgeReview": [item],
+        "mistakeNotes": [],
+        "reviewSuggestions": [item],
+    }
+    worker = worker_module.Worker(constrained, database, ai)
+
+    assert worker.process_once() and worker.process_once()
+    assert ai.calls == ["summarize"]
+    with database() as session:
+        assert session.get(db.RecordSummary, first).status == "SUCCEEDED"
+        blocked = session.get(db.RecordSummary, second)
+        assert (blocked.status, blocked.error_code, blocked.call_count) == (
+            "FAILED",
+            "RATE_LIMITED",
+            0,
+        )
+        assert blocked.error_retryable
+        assert session.get(db.Record, second).correct_count == 20

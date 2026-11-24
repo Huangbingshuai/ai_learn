@@ -3,12 +3,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from alembic import command
 from app.api.errors import ApiError
 from app.config import Settings
 from app.main import create_app
@@ -65,4 +65,5 @@ def login(client):
         response = client.post("/v1/dev/auth", json={"deviceId": device})
         assert response.status_code == 200, response.text
         return {"Authorization": f"Bearer {response.json()['accessToken']}"}
+
     return create

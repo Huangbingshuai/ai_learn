@@ -12,7 +12,9 @@ def request(client, method, path, *, idempotent=False, **kwargs):
     response = client.request(method, path, headers=headers, **kwargs)
     if not response.is_success:
         error = response.json()
-        raise RuntimeError(f"{method} {path}: {response.status_code} {error.get('code', 'UNKNOWN')}")
+        raise RuntimeError(
+            f"{method} {path}: {response.status_code} {error.get('code', 'UNKNOWN')}"
+        )
     return response.json()
 
 
@@ -54,7 +56,9 @@ def run_topic(client, topic, timeout):
         )
         if index == 0:
             changed = [question["options"][1]["optionId"]]
-            assert request(client, "PUT", receipt_path, json={"selectedOptionIds": changed}) == receipt
+            assert (
+                request(client, "PUT", receipt_path, json={"selectedOptionIds": changed}) == receipt
+            )
         receipts.append(receipt)
         if index < 19:
             assert receipt["recordId"] is None
@@ -71,10 +75,14 @@ def run_topic(client, topic, timeout):
     complete = wait_for(client, record_path, timeout, field="aiSummary")
     summary = complete["aiSummary"]["content"]
     assert summary["knowledgeReview"] and summary["reviewSuggestions"]
-    wrong_ids = {receipt["question"]["questionId"] for receipt in receipts if not receipt["isCorrect"]}
+    wrong_ids = {
+        receipt["question"]["questionId"] for receipt in receipts if not receipt["isCorrect"]
+    }
     assert bool(summary["mistakeNotes"]) is bool(wrong_ids)
     assert all(set(note["questionIds"]) <= wrong_ids for note in summary["mistakeNotes"])
-    assert any(item["recordId"] == record_id for item in request(client, "GET", "/v1/records")["items"])
+    assert any(
+        item["recordId"] == record_id for item in request(client, "GET", "/v1/records")["items"]
+    )
     print(f"{topic} 真实出题、作答、总结、历史回看通过", flush=True)
 
 

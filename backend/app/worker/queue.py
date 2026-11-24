@@ -5,9 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from app.domain.quizzes import validate_quiz
-from app.domain.summaries import validate_summary
-from app.domain.topics import get_topic_version
 from pydantic import ValidationError
 from sqlalchemy import and_, delete, exists, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,6 +22,10 @@ from app.db import (
     new_id,
     utcnow,
 )
+from app.domain.quizzes import validate_quiz
+from app.domain.summaries import validate_summary
+from app.domain.topics import get_topic_version
+from app.quota import QuotaReached, reserve_summary_quota
 from app.worker.ai import AIError, DeepSeekAI
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,16 @@ class Worker:
                     raise _quality_error()
                 row.repaired = row.repaired or repair
                 row.phase = "GENERATING"
+            else:
+                user_id = session.scalar(select(Record.user_id).where(Record.id == row.record_id))
+                if user_id is None:
+                    raise _LeaseLost()
+                try:
+                    reserve_summary_quota(session, user_id, utcnow(), self.settings)
+                except QuotaReached:
+                    raise AIError(
+                        "RATE_LIMITED", "今天的总结用量已达上限，基础结果仍可查看。", True
+                    ) from None
             row.model_name = self.settings.deepseek_model
             row.call_count += 1
             row.lease_until = min(utcnow() + self.lease_duration, row.expires_at)
@@ -292,7 +303,7 @@ class Worker:
                 next_run_at = utcnow() + delay
                 schedule = (
                     error.retryable
-                    and error.code != "GENERATION_QUALITY_FAILED"
+                    and error.code not in {"GENERATION_QUALITY_FAILED", "RATE_LIMITED"}
                     and row.call_count + needed <= self._call_limit(row)
                     and next_run_at < row.expires_at
                 )

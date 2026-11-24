@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     model_timeout: float = Field(default=100, gt=0)
     user_daily_generation_limit: int = Field(default=8, gt=0)
     global_daily_generation_limit: int = Field(default=500, gt=0)
+    user_daily_summary_limit: int = Field(default=24, gt=0)
+    global_daily_summary_limit: int = Field(default=1200, gt=0)
     quiz_hours: int = Field(default=24, gt=0)
     job_minutes: int = Field(default=25, gt=0)
     worker_poll_seconds: float = Field(default=1, gt=0)

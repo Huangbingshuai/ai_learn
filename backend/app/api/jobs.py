@@ -8,18 +8,24 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.api.attempts import key_conflict
-from app.api.auth import reserve_quota
-from app.api.dependencies import CurrentUser, DB, IdempotencyKey, digest
+from app.api.dependencies import DB, CurrentUser, IdempotencyKey, digest
 from app.api.errors import ApiError, ErrorView, not_found
 from app.db import GenerationJob, Quiz, utcnow
 from app.domain.quizzes import RULES_VERSION
 from app.domain.topics import load_topics, match_topic, normalize
+from app.quota import reserve_quota
 
-router = APIRouter(responses={
-    401: {"model": ErrorView}, 404: {"model": ErrorView}, 409: {"model": ErrorView},
-    413: {"model": ErrorView}, 422: {"model": ErrorView}, 429: {"model": ErrorView},
-    503: {"model": ErrorView},
-})
+router = APIRouter(
+    responses={
+        401: {"model": ErrorView},
+        404: {"model": ErrorView},
+        409: {"model": ErrorView},
+        413: {"model": ErrorView},
+        422: {"model": ErrorView},
+        429: {"model": ErrorView},
+        503: {"model": ErrorView},
+    }
+)
 
 
 class GenerateQuiz(BaseModel):
@@ -52,7 +58,9 @@ def _topic_title(key: str) -> str:
         return "学习主题"
 
 
-def _job_view(job: GenerationJob, quiz: Quiz | None, request: Request, title=None) -> GenerationView:
+def _job_view(
+    job: GenerationJob, quiz: Quiz | None, request: Request, title=None
+) -> GenerationView:
     result = GenerationView(
         jobId=job.id,
         status=job.status,
@@ -77,7 +85,9 @@ def _job_view(job: GenerationJob, quiz: Quiz | None, request: Request, title=Non
     elif job.status == "SUCCEEDED":
         if quiz is None or quiz.expires_at <= now:
             result.status = "FAILED"
-            result.error = ApiError(409, "QUIZ_EXPIRED", "这组题已到期，请重新生成。", True).view(request_id)
+            result.error = ApiError(409, "QUIZ_EXPIRED", "这组题已到期，请重新生成。", True).view(
+                request_id
+            )
         else:
             result.quizId = quiz.id
             result.quizExpiresAt = quiz.expires_at
@@ -86,7 +96,11 @@ def _job_view(job: GenerationJob, quiz: Quiz | None, request: Request, title=Non
 
 @router.post("/generation-jobs", status_code=202)
 def create_job(
-    body: GenerateQuiz, db: DB, user_id: CurrentUser, idempotency_key: IdempotencyKey, request: Request
+    body: GenerateQuiz,
+    db: DB,
+    user_id: CurrentUser,
+    idempotency_key: IdempotencyKey,
+    request: Request,
 ) -> GenerationView:
     input_digest = digest(normalize(body.topic))
     same_job = _job_statement(user_id).where(GenerationJob.idempotency_key == idempotency_key)
@@ -109,7 +123,8 @@ def create_job(
 
         now = utcnow()
         job_id = db.scalar(
-            insert(GenerationJob).values(
+            insert(GenerationJob)
+            .values(
                 user_id=user_id,
                 source="TOPIC",
                 topic_key=topic.topicKey,
@@ -123,7 +138,9 @@ def create_job(
                 expires_at=now + timedelta(minutes=settings.job_minutes),
                 model_name=settings.deepseek_model,
                 rules_version=RULES_VERSION,
-            ).on_conflict_do_nothing(constraint="uq_generation_idempotency").returning(GenerationJob.id)
+            )
+            .on_conflict_do_nothing(constraint="uq_generation_idempotency")
+            .returning(GenerationJob.id)
         )
         if job_id is None:
             job, quiz = db.execute(same_job).one()
@@ -134,13 +151,17 @@ def create_job(
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
         reserve_quota(db, "generation:global", start, end, settings.global_daily_generation_limit)
-        reserve_quota(db, f"generation:user:{user_id}", start, end, settings.user_daily_generation_limit)
+        reserve_quota(
+            db, f"generation:user:{user_id}", start, end, settings.user_daily_generation_limit
+        )
         return _job_view(db.get(GenerationJob, job_id), None, request, title=topic.title)
 
 
 @router.get("/generation-jobs/{job_id}")
 def read_job(job_id: UUID, db: DB, user_id: CurrentUser, request: Request) -> GenerationView:
-    result = db.execute(_job_statement(user_id).where(GenerationJob.id == str(job_id))).one_or_none()
+    result = db.execute(
+        _job_statement(user_id).where(GenerationJob.id == str(job_id))
+    ).one_or_none()
     if result is None:
         raise not_found()
     return _job_view(*result, request)

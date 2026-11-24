@@ -1,7 +1,8 @@
 """Create application identities, sessions and rate limits."""
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0001_sessions"
 down_revision = None
@@ -20,7 +21,12 @@ def upgrade():
     op.create_table(
         "sessions",
         sa.Column("id", sa.Uuid(as_uuid=False), primary_key=True),
-        sa.Column("user_id", sa.Uuid(as_uuid=False), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Uuid(as_uuid=False),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("token_digest", sa.String(64), nullable=False, unique=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),

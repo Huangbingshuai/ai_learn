@@ -34,16 +34,30 @@ def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
     assert attempt["answeredCount"] == 0
     assert attempt["totalQuestions"] == 20
     assert attempt["status"] == "ACTIVE"
-    assert set(attempt["question"]) == {"questionId", "type", "stem", "options", "index", "aiGenerated"}
+    assert set(attempt["question"]) == {
+        "questionId",
+        "type",
+        "stem",
+        "options",
+        "index",
+        "aiGenerated",
+    }
     assert attempt["question"]["index"] == 0
     assert attempt["question"]["aiGenerated"] is False
-    start = client.post("/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "start"})
+    start = client.post(
+        "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "start"}
+    )
     assert start.json()["attemptId"] == attempt["attemptId"]
     same = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
     assert same.json()["quizId"] == quiz_id
     other = login("device-999999")
     assert client.get(f"/v1/attempts/{attempt['attemptId']}", headers=other).status_code == 404
-    assert client.post("/v1/attempts", json={"quizId": quiz_id}, headers={**other, "Idempotency-Key": "x"}).status_code == 404
+    assert (
+        client.post(
+            "/v1/attempts", json={"quizId": quiz_id}, headers={**other, "Idempotency-Key": "x"}
+        ).status_code
+        == 404
+    )
 
 
 def test_expired_quiz_cannot_be_reopened(client, play, database):
@@ -52,12 +66,13 @@ def test_expired_quiz_cannot_be_reopened(client, play, database):
     headers, quiz_id, attempt = play
     with database.begin() as db:
         db.get(Quiz, quiz_id).expires_at = utcnow() - timedelta(seconds=1)
-    response = client.post("/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "restart"})
+    response = client.post(
+        "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "restart"}
+    )
     assert (response.status_code, response.json()["code"]) == (409, "QUIZ_EXPIRED")
     current = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
     assert current["status"] == "ABANDONED"
     assert current["question"] is None
-
 
 
 def choose(client, headers, attempt_id, question_id, ids):
@@ -73,7 +88,11 @@ def finish(client, headers, attempt_id, fixed_data, *, wrong=False, skip_last=Fa
     items = fixed_data["questions"][:-1] if skip_last else fixed_data["questions"]
     for index, item in enumerate(items):
         correct = item["correctOptionIds"]
-        ids = [next(opt["optionId"] for opt in item["options"] if opt["optionId"] not in correct)] if wrong and index == 0 else correct
+        ids = (
+            [next(opt["optionId"] for opt in item["options"] if opt["optionId"] not in correct)]
+            if wrong and index == 0
+            else correct
+        )
         result = choose(client, headers, attempt_id, item["questionId"], ids)
         assert result.status_code == 200, result.text
         results.append(result.json())
@@ -85,7 +104,12 @@ def test_first_submission_is_locked_and_returns_sources(client, play, fixed_data
     question = fixed_data["questions"][0]
     aid = attempt["attemptId"]
     qid = question["questionId"]
-    assert choose(client, headers, aid, fixed_data["questions"][1]["questionId"], ["o1"]).json()["code"] == "OUT_OF_ORDER"
+    assert (
+        choose(client, headers, aid, fixed_data["questions"][1]["questionId"], ["o1"]).json()[
+            "code"
+        ]
+        == "OUT_OF_ORDER"
+    )
     assert choose(client, headers, aid, qid, ["unknown"]).status_code == 422
     assert choose(client, headers, aid, qid, ["o1", "o2"]).status_code == 422
     assert choose(client, headers, aid, qid, []).status_code == 422
@@ -118,9 +142,12 @@ def test_concurrent_choices_share_the_first_receipt(client, play):
     headers, _, attempt = play
     aid, qid = attempt["attemptId"], attempt["question"]["questionId"]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda option: choose(client, headers, aid, qid, [option]).json(), ["o1", "o2"]))
+        results = list(
+            pool.map(
+                lambda option: choose(client, headers, aid, qid, [option]).json(), ["o1", "o2"]
+            )
+        )
     assert results[0] == results[1]
-
 
 
 def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_data, database):
@@ -133,10 +160,14 @@ def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_d
         assert db.scalar(select(func.count()).select_from(Record)) == 0
     last = fixed_data["questions"][-1]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(
-            lambda _: choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json(),
-            range(2),
-        ))
+        results = list(
+            pool.map(
+                lambda _: choose(
+                    client, headers, aid, last["questionId"], last["correctOptionIds"]
+                ).json(),
+                range(2),
+            )
+        )
     assert results[0] == results[1]
     rid = results[0]["recordId"]
     detail = client.get(f"/v1/records/{rid}", headers=headers).json()
@@ -161,7 +192,9 @@ def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, 
     aid = attempt["attemptId"]
     finish(client, headers, aid, fixed_data, skip_last=True)
     with database.begin() as db:
-        db.execute(text("ALTER TABLE records ADD CONSTRAINT test_reject_record CHECK (correct_count < 0)"))
+        db.execute(
+            text("ALTER TABLE records ADD CONSTRAINT test_reject_record CHECK (correct_count < 0)")
+        )
     last = fixed_data["questions"][-1]
     with TestClient(create_app(settings, database), raise_server_exceptions=False) as failing:
         result = choose(failing, headers, aid, last["questionId"], last["correctOptionIds"])
@@ -172,10 +205,14 @@ def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, 
         assert db.scalar(select(func.count()).select_from(Record)) == 0
         assert db.scalar(select(func.count()).select_from(RecordSummary)) == 0
         db.execute(text("ALTER TABLE records DROP CONSTRAINT test_reject_record"))
-    assert choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json()["recordId"]
+    assert choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json()[
+        "recordId"
+    ]
 
 
-def test_history_snapshot_survives_quiz_removal_and_is_private(client, play, fixed_data, login, database):
+def test_history_snapshot_survives_quiz_removal_and_is_private(
+    client, play, fixed_data, login, database
+):
     from app.db import Quiz
 
     headers, quiz_id, attempt = play
@@ -198,24 +235,34 @@ def test_history_keyset_handles_identical_completion_times(client, play, fixed_d
 
     headers, quiz_id, attempt = play
     first = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
-    another = client.post("/v1/attempts", headers={**headers, "Idempotency-Key": "restart"}, json={"quizId": quiz_id}).json()
+    another = client.post(
+        "/v1/attempts", headers={**headers, "Idempotency-Key": "restart"}, json={"quizId": quiz_id}
+    ).json()
     second = finish(client, headers, another["attemptId"], fixed_data)[-1]["recordId"]
     with database.begin() as db:
         db.execute(update(Record).values(completed_at=utcnow()))
 
     page1 = client.get("/v1/records", params={"limit": 1}, headers=headers).json()
     assert page1["items"][0]["recordId"] == max(first, second)
-    page2 = client.get("/v1/records", params={"limit": 1, "cursor": page1["nextCursor"]}, headers=headers).json()
+    page2 = client.get(
+        "/v1/records", params={"limit": 1, "cursor": page1["nextCursor"]}, headers=headers
+    ).json()
     assert page2["items"][0]["recordId"] == min(first, second)
     assert page2["nextCursor"] is None
-    assert client.get("/v1/records", params={"cursor": "?invalid"}, headers=headers).status_code == 422
+    assert (
+        client.get("/v1/records", params={"cursor": "?invalid"}, headers=headers).status_code == 422
+    )
 
 
-def test_summary_retry_is_private_and_can_only_be_accepted_once(client, play, fixed_data, database, login):
+def test_summary_retry_is_private_and_can_only_be_accepted_once(
+    client, play, fixed_data, database, login
+):
     from app.db import RecordSummary
 
     headers, _, attempt = play
-    record_id = finish(client, headers, attempt["attemptId"], fixed_data, wrong=True)[-1]["recordId"]
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data, wrong=True)[-1][
+        "recordId"
+    ]
     path = f"/v1/records/{record_id}/ai-summary/retry"
     with database.begin() as db:
         summary = db.get(RecordSummary, record_id)
@@ -227,7 +274,12 @@ def test_summary_retry_is_private_and_can_only_be_accepted_once(client, play, fi
     failure = client.get(f"/v1/records/{record_id}", headers=headers).json()
     assert failure["aiSummary"]["error"]["retryable"]
     assert failure["correctCount"] == 19
-    assert client.post(path, headers={**login("device-123999"), "Idempotency-Key": "cross-user"}).status_code == 404
+    assert (
+        client.post(
+            path, headers={**login("device-123999"), "Idempotency-Key": "cross-user"}
+        ).status_code
+        == 404
+    )
     key = {**headers, "Idempotency-Key": "first-retry"}
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: client.post(path, headers=key), range(2)))
@@ -244,7 +296,9 @@ def test_summary_retry_is_private_and_can_only_be_accepted_once(client, play, fi
     assert client.post(path, headers={**headers, "Idempotency-Key": "new-retry"}).status_code == 409
 
 
-def test_elapsed_summary_can_be_requeued_when_worker_was_offline(client, play, fixed_data, database):
+def test_elapsed_summary_can_be_requeued_when_worker_was_offline(
+    client, play, fixed_data, database
+):
     from app.db import RecordSummary, utcnow
 
     headers, _, attempt = play
@@ -255,4 +309,41 @@ def test_elapsed_summary_can_be_requeued_when_worker_was_offline(client, play, f
     assert record["aiSummary"]["status"] == "FAILED"
     assert record["aiSummary"]["error"]["retryable"]
     path = f"/v1/records/{record_id}/ai-summary/retry"
-    assert client.post(path, headers={**headers, "Idempotency-Key": "after-deadline"}).json()["status"] == "QUEUED"
+    assert (
+        client.post(path, headers={**headers, "Idempotency-Key": "after-deadline"}).json()["status"]
+        == "QUEUED"
+    )
+
+
+def test_summary_quota_does_not_consume_manual_retry_slot(
+    client, play, fixed_data, database, settings
+):
+    from fastapi.testclient import TestClient
+
+    from app.db import RateLimit, RecordSummary, utcnow
+    from app.main import create_app
+
+    headers, _, attempt = play
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    with database.begin() as db:
+        summary = db.get(RecordSummary, record_id)
+        summary.status = "FAILED"
+        summary.error_code = "RATE_LIMITED"
+        summary.error_retryable = True
+        now = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        db.add(
+            RateLimit(
+                key="summary:global", window_start=now, expires_at=now + timedelta(days=1), count=1
+            )
+        )
+    constrained = settings.model_copy(update={"global_daily_summary_limit": 1})
+    with TestClient(create_app(constrained, database)) as capped:
+        response = capped.post(
+            f"/v1/records/{record_id}/ai-summary/retry",
+            headers={**headers, "Idempotency-Key": "when-full"},
+        )
+    assert response.status_code == 429
+    with database() as db:
+        summary = db.get(RecordSummary, record_id)
+        assert summary.retry_count == 0
+        assert summary.retry_key is None

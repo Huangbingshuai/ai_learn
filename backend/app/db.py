@@ -1,10 +1,20 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+    create_engine,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
-from sqlalchemy import create_engine
 
 
 def utcnow() -> datetime:
@@ -49,7 +59,7 @@ class RateLimit(Base):
 
 
 def make_session_factory(database_url: str) -> sessionmaker:
-    engine = create_engine(database_url, pool_pre_ping=True)
+    engine = create_engine(database_url, pool_pre_ping=True, hide_parameters=True)
     return sessionmaker(engine, expire_on_commit=False)
 
 
@@ -58,7 +68,9 @@ class GenerationJob(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "source", "idempotency_key", name="uq_generation_idempotency"),
         CheckConstraint("source IN ('TOPIC', 'FIXED')", name="ck_generation_source"),
-        CheckConstraint("status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_generation_status"),
+        CheckConstraint(
+            "status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_generation_status"
+        ),
         Index("ix_generation_dispatch", "status", "next_run_at", "created_at"),
         Index("ix_generation_lease", "status", "lease_until"),
     )
@@ -91,7 +103,9 @@ class Quiz(Base):
     __tablename__ = "quizzes"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
-    job_id: Mapped[str] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), unique=True)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("generation_jobs.id", ondelete="CASCADE"), unique=True
+    )
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     topic_key: Mapped[str] = mapped_column(String(64))
     topic_title: Mapped[str] = mapped_column(String(100))
@@ -108,7 +122,10 @@ class Attempt(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_attempt_start_key"),
         CheckConstraint("status IN ('ACTIVE', 'PASSED', 'ABANDONED')", name="ck_attempt_status"),
-        CheckConstraint("correct_count BETWEEN 0 AND answered_count AND answered_count BETWEEN 0 AND 20", name="ck_attempt_progress"),
+        CheckConstraint(
+            "correct_count BETWEEN 0 AND answered_count AND answered_count BETWEEN 0 AND 20",
+            name="ck_attempt_progress",
+        ),
         Index("ix_attempts_quiz_status", "quiz_id", "status"),
     )
 
@@ -129,7 +146,9 @@ class AttemptAnswer(Base):
         UniqueConstraint("attempt_id", "question_index", name="uq_attempt_answer_index"),
     )
 
-    attempt_id: Mapped[str] = mapped_column(ForeignKey("attempts.id", ondelete="CASCADE"), primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("attempts.id", ondelete="CASCADE"), primary_key=True
+    )
     question_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     question_index: Mapped[int] = mapped_column(Integer)
     receipt: Mapped[dict] = mapped_column(JSONB)
@@ -153,12 +172,16 @@ class Record(Base):
 class RecordSummary(Base):
     __tablename__ = "record_ai_summaries"
     __table_args__ = (
-        CheckConstraint("status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_summary_status"),
+        CheckConstraint(
+            "status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_summary_status"
+        ),
         Index("ix_summary_dispatch", "status", "next_run_at", "created_at"),
         Index("ix_summary_lease", "status", "lease_until"),
     )
 
-    record_id: Mapped[str] = mapped_column(ForeignKey("records.id", ondelete="CASCADE"), primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("records.id", ondelete="CASCADE"), primary_key=True
+    )
     status: Mapped[str] = mapped_column(String(12))
     content: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

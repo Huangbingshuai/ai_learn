@@ -62,7 +62,11 @@ def validate_quiz(raw: dict, topic: dict) -> QuizSpec:
     if {q.type for q in spec.questions} != {"single", "multi", "judge"}:
         raise ValueError("Include single, multi and judge questions")
     stems = {normalize(q.stem) for q in spec.questions}
-    if len({q.questionId for q in spec.questions}) != TOTAL_QUESTIONS or len(stems) != TOTAL_QUESTIONS or "" in stems:
+    if (
+        len({q.questionId for q in spec.questions}) != TOTAL_QUESTIONS
+        or len(stems) != TOTAL_QUESTIONS
+        or "" in stems
+    ):
         raise ValueError("Every question must have a unique ID and stem")
     source_ids = {item["evidenceId"] for item in topic["evidence"]}
     for item in [*spec.questions, *spec.takeaways]:
