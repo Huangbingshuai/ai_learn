@@ -1,0 +1,576 @@
+{
+  "title": "四季成因",
+  "takeaways": [
+    {
+      "text": "地轴倾斜与地球公转共同造成季节性日照变化。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "text": "南北半球温带的季节相反。",
+      "evidenceIds": [
+        "earth-flip"
+      ]
+    },
+    {
+      "text": "分日与至日的太阳直射点位置不同。",
+      "evidenceIds": [
+        "earth-equinox"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "questionId": "seasons-01",
+      "type": "single",
+      "stem": "一年里的季节性日照变化，主要由什么造成？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "地轴倾斜与地球公转共同作用"
+        },
+        {
+          "optionId": "o2",
+          "text": "月亮绕地球转动"
+        },
+        {
+          "optionId": "o3",
+          "text": "地球每天自转变快"
+        },
+        {
+          "optionId": "o4",
+          "text": "太阳每半年大小交替变化"
+        }
+      ],
+      "correctOptionIds": [
+        "o1"
+      ],
+      "explanation": "地轴保持倾斜，地球沿轨道移动。两者共同改变一个半球在一年中接收阳光的角度与时长。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "questionId": "seasons-02",
+      "type": "judge",
+      "stem": "地球绕太阳公转时，地轴在一年内大致指向同一方向。",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "正确"
+        },
+        {
+          "optionId": "o2",
+          "text": "错误"
+        }
+      ],
+      "correctOptionIds": [
+        "o1"
+      ],
+      "explanation": "在解释四季的一年尺度上，可以把地轴在轨道上各位置画成大致平行。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "questionId": "seasons-03",
+      "type": "single",
+      "stem": "地轴和公转轨道面的垂直方向，夹角最接近哪个数值？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "0°"
+        },
+        {
+          "optionId": "o2",
+          "text": "约 23.4°"
+        },
+        {
+          "optionId": "o3",
+          "text": "约 45°"
+        },
+        {
+          "optionId": "o4",
+          "text": "90°"
+        }
+      ],
+      "correctOptionIds": [
+        "o2"
+      ],
+      "explanation": "倾角约 23.4°。这里的参考方向是公转轨道面的垂线。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "questionId": "seasons-04",
+      "type": "multi",
+      "stem": "哪些因素会影响北半球同一地点冬夏的日照差异？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "地轴倾斜"
+        },
+        {
+          "optionId": "o2",
+          "text": "地月距离变化"
+        },
+        {
+          "optionId": "o3",
+          "text": "地球在公转轨道上的位置"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o3"
+      ],
+      "explanation": "地轴倾斜。随着地球公转，同一地点受到太阳照射的角度和时长会变化。地月距离对这个冬夏差异不起决定作用。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "questionId": "seasons-05",
+      "type": "multi",
+      "stem": "与当地冬季相比，北半球中纬度某地的夏季通常有哪些特点？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "白昼较长"
+        },
+        {
+          "optionId": "o2",
+          "text": "正午太阳高度角较大"
+        },
+        {
+          "optionId": "o3",
+          "text": "正午太阳总在地平线以下"
+        },
+        {
+          "optionId": "o4",
+          "text": "白昼比冬季短"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o2"
+      ],
+      "explanation": "太阳在天空中通常更高，且在地平线上方停留更久，因此夏季常有更长的白昼。",
+      "evidenceIds": [
+        "earth-daylight"
+      ]
+    },
+    {
+      "questionId": "seasons-06",
+      "type": "single",
+      "stem": "同一束光直照和斜照地面时，哪一种更集中？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "斜照，因为光斑更大"
+        },
+        {
+          "optionId": "o2",
+          "text": "两种照射始终一样集中"
+        },
+        {
+          "optionId": "o3",
+          "text": "直照，因为光斑面积更小"
+        },
+        {
+          "optionId": "o4",
+          "text": "只取决于月相"
+        }
+      ],
+      "correctOptionIds": [
+        "o3"
+      ],
+      "explanation": "在同一束光的条件下，直照把光分配在更小的表面面积内，每单位面积接收的能量更多。",
+      "evidenceIds": [
+        "earth-daylight"
+      ]
+    },
+    {
+      "questionId": "seasons-07",
+      "type": "judge",
+      "stem": "北半球中纬度同一地点，夏季的白昼通常比冬季长。",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "正确"
+        },
+        {
+          "optionId": "o2",
+          "text": "错误"
+        }
+      ],
+      "correctOptionIds": [
+        "o1"
+      ],
+      "explanation": "夏季照射条件使太阳通常在地平线上方停留更久。",
+      "evidenceIds": [
+        "earth-daylight"
+      ]
+    },
+    {
+      "questionId": "seasons-08",
+      "type": "single",
+      "stem": "北京处于夏季时，南半球温带的悉尼通常是什么季节？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "春季"
+        },
+        {
+          "optionId": "o2",
+          "text": "夏季"
+        },
+        {
+          "optionId": "o3",
+          "text": "秋季"
+        },
+        {
+          "optionId": "o4",
+          "text": "冬季"
+        }
+      ],
+      "correctOptionIds": [
+        "o4"
+      ],
+      "explanation": "两个半球的温带季节相反。六月前后，北半球经历夏季，南半球经历冬季。",
+      "evidenceIds": [
+        "earth-flip"
+      ]
+    },
+    {
+      "questionId": "seasons-09",
+      "type": "judge",
+      "stem": "地球离太阳最近时，北半球通常正值夏季。",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "正确"
+        },
+        {
+          "optionId": "o2",
+          "text": "错误"
+        }
+      ],
+      "correctOptionIds": [
+        "o2"
+      ],
+      "explanation": "地球在一月初附近经过近日点，北半球的温带此时仍是冬季。",
+      "evidenceIds": [
+        "earth-flip"
+      ]
+    },
+    {
+      "questionId": "seasons-10",
+      "type": "multi",
+      "stem": "哪些观察可以用来检验「越靠近太阳，所有地方就越接近夏季」的说法？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "一月初附近地球较靠近太阳，北半球温带仍是冬季"
+        },
+        {
+          "optionId": "o2",
+          "text": "南、北半球常在同一时刻经历相反的季节"
+        },
+        {
+          "optionId": "o3",
+          "text": "某一天月亮呈弯月"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o2"
+      ],
+      "explanation": "近日点日期和两半球相反的季节都说明，只看日地距离不足以解释四季。",
+      "evidenceIds": [
+        "earth-flip"
+      ]
+    },
+    {
+      "questionId": "seasons-11",
+      "type": "judge",
+      "stem": "北半球和南半球的温带地区，会在同一时段同时迎来夏季。",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "正确"
+        },
+        {
+          "optionId": "o2",
+          "text": "错误"
+        }
+      ],
+      "correctOptionIds": [
+        "o2"
+      ],
+      "explanation": "北半球温带迎来夏季时，南半球温带处在冬季。",
+      "evidenceIds": [
+        "earth-flip"
+      ]
+    },
+    {
+      "questionId": "seasons-12",
+      "type": "single",
+      "stem": "六月至日附近，太阳直射点最靠近哪里？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "北回归线"
+        },
+        {
+          "optionId": "o2",
+          "text": "南回归线"
+        },
+        {
+          "optionId": "o3",
+          "text": "北极点"
+        },
+        {
+          "optionId": "o4",
+          "text": "赤道"
+        }
+      ],
+      "correctOptionIds": [
+        "o1"
+      ],
+      "explanation": "六月至日附近，太阳直射点处在一年中的最北位置，靠近北回归线。",
+      "evidenceIds": [
+        "earth-equinox"
+      ]
+    },
+    {
+      "questionId": "seasons-13",
+      "type": "single",
+      "stem": "十二月至日附近，太阳直射点最靠近哪里？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "北回归线"
+        },
+        {
+          "optionId": "o2",
+          "text": "赤道"
+        },
+        {
+          "optionId": "o3",
+          "text": "南回归线"
+        },
+        {
+          "optionId": "o4",
+          "text": "南极点"
+        }
+      ],
+      "correctOptionIds": [
+        "o3"
+      ],
+      "explanation": "十二月至日附近，太阳直射点处在一年中的最南位置，靠近南回归线。",
+      "evidenceIds": [
+        "earth-equinox"
+      ]
+    },
+    {
+      "questionId": "seasons-14",
+      "type": "multi",
+      "stem": "关于春分和秋分，哪些描述正确？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "太阳直射点在赤道附近"
+        },
+        {
+          "optionId": "o2",
+          "text": "全球大多数地点昼夜大致等长"
+        },
+        {
+          "optionId": "o3",
+          "text": "北半球所有地点都出现极昼"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o2"
+      ],
+      "explanation": "分日前后，太阳直射点经过赤道，大多数地点白昼和黑夜的长度相近。",
+      "evidenceIds": [
+        "earth-equinox"
+      ]
+    },
+    {
+      "questionId": "seasons-15",
+      "type": "single",
+      "stem": "北半球中纬度某地记录了一年中的昼长，哪天附近昼长通常最长？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "十二月至日"
+        },
+        {
+          "optionId": "o2",
+          "text": "六月至日"
+        },
+        {
+          "optionId": "o3",
+          "text": "春分"
+        },
+        {
+          "optionId": "o4",
+          "text": "秋分"
+        }
+      ],
+      "correctOptionIds": [
+        "o2"
+      ],
+      "explanation": "六月至日附近太阳直射点达到最北位置，北半球中纬度的一般地点白昼最长。",
+      "evidenceIds": [
+        "earth-equinox"
+      ]
+    },
+    {
+      "questionId": "seasons-16",
+      "type": "single",
+      "stem": "想用一个现象说明地球自转，可以选哪个？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "春夏秋冬交替"
+        },
+        {
+          "optionId": "o2",
+          "text": "一年中白昼长度变化"
+        },
+        {
+          "optionId": "o3",
+          "text": "一天中昼夜交替"
+        }
+      ],
+      "correctOptionIds": [
+        "o3"
+      ],
+      "explanation": "地球每自转一周，同一普通地点随之交替经历朝向和背向太阳的时段。",
+      "evidenceIds": [
+        "earth-scale"
+      ]
+    },
+    {
+      "questionId": "seasons-17",
+      "type": "judge",
+      "stem": "知道一个地方现在是夏季，就能断定它任意一天都比冬季的任意一天暖和。",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "正确"
+        },
+        {
+          "optionId": "o2",
+          "text": "错误"
+        }
+      ],
+      "correctOptionIds": [
+        "o2"
+      ],
+      "explanation": "季节影响日照条件，但当天的天气还受云量、气流等因素影响。",
+      "evidenceIds": [
+        "earth-scale",
+        "earth-weather"
+      ]
+    },
+    {
+      "questionId": "seasons-18",
+      "type": "multi",
+      "stem": "用球模拟四季，哪两件事应该同时做到？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "让球的轴保持倾斜"
+        },
+        {
+          "optionId": "o2",
+          "text": "让球绕代表太阳的灯移动"
+        },
+        {
+          "optionId": "o3",
+          "text": "每走到一个位置就把轴转向灯"
+        },
+        {
+          "optionId": "o4",
+          "text": "只让球在原地自转"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o2"
+      ],
+      "explanation": "用同一方向的倾斜轴代表地轴，移动球模拟公转，能观察到哪个半球更朝向灯光。",
+      "evidenceIds": [
+        "earth-tilt"
+      ]
+    },
+    {
+      "questionId": "seasons-19",
+      "type": "single",
+      "stem": "冬季白昼较短，意味着太阳在地平线上方停留的时间通常怎样？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "更短"
+        },
+        {
+          "optionId": "o2",
+          "text": "更长"
+        },
+        {
+          "optionId": "o3",
+          "text": "全年一样"
+        },
+        {
+          "optionId": "o4",
+          "text": "一天内无法观察"
+        }
+      ],
+      "correctOptionIds": [
+        "o1"
+      ],
+      "explanation": "在普通的中纬度地点，从日出到日落的时间越短，白昼就越短。",
+      "evidenceIds": [
+        "earth-daylight"
+      ]
+    },
+    {
+      "questionId": "seasons-20",
+      "type": "multi",
+      "stem": "要比较同一地点冬夏的太阳照射条件，哪些记录最直接？",
+      "options": [
+        {
+          "optionId": "o1",
+          "text": "当地白昼时长"
+        },
+        {
+          "optionId": "o2",
+          "text": "当地正午太阳高度角"
+        },
+        {
+          "optionId": "o3",
+          "text": "当天的月相名称"
+        },
+        {
+          "optionId": "o4",
+          "text": "别的城市的街道长度"
+        }
+      ],
+      "correctOptionIds": [
+        "o1",
+        "o2"
+      ],
+      "explanation": "白昼时长反映照射时间，正午太阳高度角能帮助比较照射角度。",
+      "evidenceIds": [
+        "earth-daylight"
+      ]
+    }
+  ]
+}

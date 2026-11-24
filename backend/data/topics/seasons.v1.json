@@ -1,0 +1,108 @@
+{
+  "topicKey": "seasons",
+  "title": "四季成因",
+  "art": "earth",
+  "aliases": ["四季", "为什么会有四季", "四季是怎么形成的", "四季形成的原因", "四季变化", "季节成因"],
+  "version": "v1",
+  "evidence": [
+    {
+      "evidenceId": "earth-tilt",
+      "text": "地轴与地球公转轨道面的垂线约成 23.4°。在一年内，地球绕太阳公转，地轴在空间中大致保持同一朝向。地球到达不同轨道位置时，两个半球轮流更朝向太阳。这个几何关系改变各地一年中阳光照到地面的角度和白昼时长。",
+      "sourceTitle": "What Causes the Seasons?",
+      "sourceOrganization": "NASA Space Place",
+      "sourceUrl": "https://spaceplace.nasa.gov/seasons/en/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于地轴倾斜、公转和四季模型"
+    },
+    {
+      "evidenceId": "earth-daylight",
+      "text": "北半球中纬度的同一地点，夏季通常比冬季白昼更长、正午太阳更高。相同的一束光以较陡的角度照到地面时，照亮的面积较小，单位面积接收到的能量较多。白昼时长反映太阳从升起到落下的时间。结合昼长和正午太阳高度角，可以比较同一地点的季节性日照条件。",
+      "sourceTitle": "The Angle of the Sun’s Rays",
+      "sourceOrganization": "NASA 戈达德太空飞行中心",
+      "sourceUrl": "https://pwg.gsfc.nasa.gov/stargaze/Sunangle.htm",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于太阳高度角、照射面积和温带昼长"
+    },
+    {
+      "evidenceId": "earth-flip",
+      "text": "南北半球温带的季节大致相反，北半球温带度夏时，南半球温带正值冬季。地球在一月初附近到达近日点，当时北半球温带仍在冬季。日地距离变化对全球同时起作用，仅凭距离无法解释两半球的季节差异。",
+      "sourceTitle": "What Causes the Seasons?",
+      "sourceOrganization": "NASA Space Place",
+      "sourceUrl": "https://spaceplace.nasa.gov/seasons/en/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于半球季节对照和日地距离误区"
+    },
+    {
+      "evidenceId": "earth-equinox",
+      "text": "三月和九月的分日，太阳直射赤道，地球上大多数地点的昼夜时长接近十二小时。六月至日的太阳直射点到达一年最北位置，即北回归线。十二月至日的直射点到达最南位置，即南回归线。以北半球中纬度地点为例，六月至日前后白昼最长，十二月至日前后白昼最短。太阳光在大气中的折射会使分日的实际昼长略长于理想几何结果。",
+      "sourceTitle": "The Seasons, the Equinox, and the Solstices",
+      "sourceOrganization": "美国国家气象局（NWS）",
+      "sourceUrl": "https://www.weather.gov/cle/seasons",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于分日、至日、直射纬度和昼夜长度"
+    },
+    {
+      "evidenceId": "earth-scale",
+      "text": "地球绕自转轴转动，大约每天一周。以温带地点为例，地球自转让这处地点先后转向太阳、从日照侧转到背光侧，形成昼夜交替。四季的日照规律则在地球绕太阳一周的过程中重复，取决于公转与地轴倾斜的共同作用。",
+      "sourceTitle": "What Causes the Seasons?",
+      "sourceOrganization": "NASA Space Place",
+      "sourceUrl": "https://spaceplace.nasa.gov/seasons/en/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于区分每天的昼夜和每年的季节循环"
+    },
+    {
+      "evidenceId": "earth-weather",
+      "text": "天气描述某一时刻或短时段的大气状态，例如气温、晴雨和风。它可以在一小时或一天内改变。季节性的气温规律描述一段时期的总体情况，仅凭季节无法给任意两天的实际气温排序。",
+      "sourceTitle": "What is the difference between weather and climate?",
+      "sourceOrganization": "美国国家海洋和大气管理局海洋服务局（NOAA NOS）",
+      "sourceUrl": "https://oceanservice.noaa.gov/facts/weather_climate.html",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于区分季节规律和单日天气"
+    },
+    {
+      "evidenceId": "earth-orbit-distance",
+      "text": "地球轨道略呈椭圆。近日点是地球沿轨道最靠近太阳的位置，通常在一月初经过；远日点是最远的位置，通常在七月初经过。地轴与太阳方向的关系决定哪个半球在该时段获得角度更直接、时段更长的日照。",
+      "sourceTitle": "Milankovitch (Orbital) Cycles and Their Role in Earth’s Climate",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/science-research/earth-science/milankovitch-orbital-cycles-and-their-role-in-earths-climate/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于日地距离的年内变化及其与季节成因的关系"
+    },
+    {
+      "evidenceId": "earth-thermal-lag",
+      "text": "许多中高纬度地区，一年中平均气温最高的时段会晚于当地的夏至。地表和水体的升温需要时间。即使夏至之后白昼开始缩短，气温在一段时间内仍可能继续上升。",
+      "sourceTitle": "The Seasons, the Equinox, and the Solstices",
+      "sourceOrganization": "美国国家气象局（NWS）",
+      "sourceUrl": "https://www.weather.gov/cle/seasons",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于夏季日照峰值和平均气温峰值的时间差"
+    },
+    {
+      "evidenceId": "earth-season-calendar",
+      "text": "天文季节通常以两个分日和两个至日为界。气象季节依据一年中的气温循环，按连续三个完整月份分组。以北半球温带常见的气象划分为例，六月到八月是夏季，十二月到次年二月是冬季。",
+      "sourceTitle": "Meteorological Versus Astronomical Seasons",
+      "sourceOrganization": "美国国家环境信息中心（NOAA NCEI）",
+      "sourceUrl": "https://www.ncei.noaa.gov/news/meteorological-versus-astronomical-seasons",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于不同季节划分标准和北半球常用示例"
+    },
+    {
+      "evidenceId": "earth-sunlit-hemisphere",
+      "text": "从朝阳一侧观测地球，可以比较一年中两个半球哪一端更朝向太阳。NASA 的卫星图像显示，六月至日前后北半球朝向太阳的程度最大，十二月至日前后轮到南半球。到分日，地球日照面和背光面的分界线穿过南北两极，两个半球得到的日照总量大致相等。",
+      "sourceTitle": "An Epic View of the Seasons",
+      "sourceOrganization": "NASA Earth Observatory",
+      "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/an-epic-view-of-the-seasons/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于从地球整体图像辨认分日和至日"
+    },
+    {
+      "evidenceId": "earth-polar-light",
+      "text": "北极附近在当地夏季有一段时间太阳整天位于地平线上方。即使连续有阳光，太阳在天空中的位置仍相对较低，斜照带来的加热比较有限。比较不同纬度的日照强弱时，要同时看时长和角度。",
+      "sourceTitle": "The Angle of the Sun’s Rays",
+      "sourceOrganization": "NASA 戈达德太空飞行中心",
+      "sourceUrl": "https://pwg.gsfc.nasa.gov/stargaze/Sunangle.htm",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于极地与温带的日照对照"
+    }
+  ]
+}
