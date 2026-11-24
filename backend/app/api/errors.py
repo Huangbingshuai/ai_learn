@@ -61,3 +61,44 @@ def install_errors(app):
             exc.status_code, "HTTP_ERROR", "请求无法处理。"
         )
         return JSONResponse(error.view(request.state.request_id).model_dump(), error.status)
+
+
+class RequestBodyLimit:
+    """Reject oversized streaming requests before parsing JSON."""
+
+    def __init__(self, app, max_bytes: int = 32768):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        payload = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(payload) + len(chunk) > self.max_bytes:
+                error = ApiError(413, "REQUEST_TOO_LARGE", "请求内容过长，请缩短后再试。")
+                response = JSONResponse(
+                    error.view(scope["state"]["request_id"]).model_dump(), error.status
+                )
+                await response(scope, receive, send)
+                return
+            payload.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        pending = True
+
+        async def replay():
+            nonlocal pending
+            if pending:
+                pending = False
+                return {"type": "http.request", "body": bytes(payload), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
