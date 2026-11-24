@@ -4,6 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "topics"
 
@@ -121,3 +122,54 @@ def test_concurrent_choices_share_the_first_receipt(client, play):
     assert results[0] == results[1]
 
 
+
+def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_data, database):
+    from app.db import Record, RecordSummary
+
+    headers, _, attempt = play
+    aid = attempt["attemptId"]
+    finish(client, headers, aid, fixed_data, wrong=True, skip_last=True)
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(Record)) == 0
+    last = fixed_data["questions"][-1]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(
+            lambda _: choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json(),
+            range(2),
+        ))
+    assert results[0] == results[1]
+    rid = results[0]["recordId"]
+    detail = client.get(f"/v1/records/{rid}", headers=headers).json()
+    assert detail["totalQuestions"] == 20
+    assert detail["correctCount"] == 19
+    assert len(detail["answers"]) == 20
+    assert detail["answers"][-1]["recordId"] == rid
+    assert detail["aiSummary"]["status"] == "QUEUED"
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(Record)) == 1
+        assert db.scalar(select(func.count()).select_from(RecordSummary)) == 1
+
+
+def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, database, settings):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text
+
+    from app.db import Attempt, AttemptAnswer, Record, RecordSummary
+    from app.main import create_app
+
+    headers, _, attempt = play
+    aid = attempt["attemptId"]
+    finish(client, headers, aid, fixed_data, skip_last=True)
+    with database.begin() as db:
+        db.execute(text("ALTER TABLE records ADD CONSTRAINT test_reject_record CHECK (correct_count < 0)"))
+    last = fixed_data["questions"][-1]
+    with TestClient(create_app(settings, database), raise_server_exceptions=False) as failing:
+        result = choose(failing, headers, aid, last["questionId"], last["correctOptionIds"])
+    assert result.status_code == 500
+    with database.begin() as db:
+        assert db.get(Attempt, aid).answered_count == 19
+        assert db.get(AttemptAnswer, (aid, last["questionId"])) is None
+        assert db.scalar(select(func.count()).select_from(Record)) == 0
+        assert db.scalar(select(func.count()).select_from(RecordSummary)) == 0
+        db.execute(text("ALTER TABLE records DROP CONSTRAINT test_reject_record"))
+    assert choose(client, headers, aid, last["questionId"], last["correctOptionIds"]).json()["recordId"]
