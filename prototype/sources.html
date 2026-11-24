@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>题目依据 · 轻知闯关</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="questions.js"></script>
+</head>
+<body>
+  <main class="source-document">
+    <header>
+      <h1>题目依据</h1>
+      <p>轻知闯关原型预置资料。以下为本地编写的演示段落，对应题目和讲解中的依据编号。</p>
+      <a href="index.html">返回轻知闯关</a>
+    </header>
+    <section id="source-list" aria-label="资料段落"></section>
+  </main>
+  <script>
+    const list = document.querySelector("#source-list");
+    for (const [id, evidence] of Object.entries(window.QINGZHI_DATA.evidence)) {
+      const article = document.createElement("article");
+      const heading = document.createElement("h2");
+      const text = document.createElement("p");
+      article.id = id;
+      heading.textContent = evidence.title;
+      text.textContent = evidence.text;
+      article.append(heading, text);
+      list.append(article);
+    }
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) target.scrollIntoView();
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff9ef">
+  <title>轻知闯关 · 漫画融合版原型</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="questions.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="workbench">
+    <header class="workbench-header">
+      <a class="wordmark" href="./index.html">轻知闯关</a>
+      <span class="workbench-label">漫画融合版 · 交互原型</span>
+      <a class="outline-link" href="assets/p1-sketch.png" target="_blank" rel="noopener">查看 P1 扩展草图 <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main class="workspace">
+      <div class="device" id="app" aria-label="轻知闯关小程序">
+        <noscript><p class="initial-copy">开启 JavaScript 后即可体验这份本地原型。</p></noscript>
+      </div>
+      <aside class="review" aria-label="评审工具">
+        <details class="review-panel" id="review-panel" open>
+          <summary>原型评审</summary>
+          <div class="review-body">
+            <p>从首页选主题可以完成一整组。也可以跳到示例，查看讲解或通关后的界面。</p>
+            <div class="review-actions">
+              <button type="button" class="quiet-button" data-action="sample-feedback">预览第 4 题讲解</button>
+              <button type="button" class="quiet-button" data-action="sample-result">预览通关结果</button>
+            </div>
+            <h2>模拟下一次生成</h2>
+            <label class="review-field" for="generation-mode">题组生成
+              <select id="generation-mode">
+                <option value="ok">正常</option>
+                <option value="timeout">暂时失败 · 可重试</option>
+                <option value="sources">依据不足 · 换主题</option>
+                <option value="quality">题组未通过核验 · 可重试</option>
+              </select>
+            </label>
+            <label class="review-field" for="summary-mode">AI 学习总结
+              <select id="summary-mode">
+                <option value="ok">正常</option>
+                <option value="timeout">暂时失败 · 可重试</option>
+                <option value="unavailable">生成失败 · 无法重试</option>
+              </select>
+            </label>
+            <p class="local-note" id="storage-note">本地示例题与模拟生成。已完成记录保存在当前浏览器。</p>
+            <a class="review-p1" href="assets/p1-sketch.png" target="_blank" rel="noopener">查看 P1 扩展草图 <span aria-hidden="true">↗</span></a>
+          </div>
+        </details>
+      </aside>
+    </main>
+  </div>
+
+  <dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
+    <div id="sheet-content"></div>
+  </dialog>
+</body>
+</html>
