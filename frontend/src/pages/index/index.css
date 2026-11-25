@@ -108,6 +108,15 @@
   line-height: 1.48;
 }
 .home-caption { display: block; margin: 6px 0 13px; color: var(--muted); font-size: 12px; }
+.account-strip { display: flex; align-items: center; width: 100%; margin: 0 0 16px; padding: 9px 11px; border: 1px solid var(--ink); border-radius: 3px 12px 3px 12px; background: #fffdf7; text-align: left; box-shadow: 2px 2px 0 var(--ink); }
+.account-avatar { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; margin-right: 10px; border: 1px solid var(--ink); border-radius: 50%; background: var(--yellow); color: var(--ink); font-size: 18px; font-weight: 900; }
+.account-name { display: flex; flex: 1; flex-direction: column; gap: 2px; color: var(--ink); font-size: 14px; font-weight: 700; }
+.account-hint, .profile-note { color: var(--muted); font-size: 11px; font-weight: 400; }
+.coin-balance { color: #78530a; font-size: 14px; font-weight: 800; }
+.profile-form { display: flex; flex-direction: column; gap: 12px; }
+.profile-label { color: var(--muted); font-size: 12px; }
+.profile-input { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid var(--ink); border-radius: 4px 10px; background: #fffdf7; color: var(--ink); font-size: 15px; }
+.profile-wallet { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px dashed var(--muted); color: var(--ink); font-size: 13px; }
 .topic-form { display: flex; flex-direction: column; }
 .topic-field { position: relative; margin-bottom: 9px; }
 .topic-form .field-error { margin-bottom: 9px; }
@@ -432,6 +441,7 @@
 .feedback.is-correct .feedback-heading { color: var(--green); }
 .feedback-art { position: absolute; width: 65px; right: 3px; bottom: 0; }
 .feedback-answers { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
+.coin-result { display: block; margin-top: 6px; color: #78530a; font-size: 12px; font-weight: 800; }
 .correct-label { color: var(--green); font-weight: 800; }
 .review-stem { display: block; margin: 1px 0 10px; font-size: 15px; font-weight: 750; }
 .speech { margin: 16px 2px 14px 0; padding: 10px 12px; border-radius: 15px; background: var(--white); box-shadow: 3px 3px var(--mint); }

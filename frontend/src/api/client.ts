@@ -1,7 +1,7 @@
 import Taro from '@tarojs/taro'
 import { makeKey, prunePendingGenerations } from '../features/flow'
 import { createRequestClient, readResponse, RequestError, type RequestOptions, type Session } from './request'
-import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, QuizGroup, RecordPage, TopicList } from './types'
+import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, QuizGroup, RecordPage, TopicList, UserProfile } from './types'
 
 const SESSION_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.session.dev.v1' : 'qingzhi.session.wechat.v1'
 const DEVICE_KEY = 'qingzhi.device.v1'
@@ -38,12 +38,14 @@ async function transport({ path, method = 'GET', data, idempotencyKey }: Request
 }
 
 let businessSession = readSaved<Session>(SESSION_KEY)
+let activeUserId: string | undefined = businessSession?.userId
 
 const request = createRequestClient({
   transport,
   readSession: () => businessSession,
   saveSession(session) {
     businessSession = session
+    if (session) activeUserId = session.userId
     save(SESSION_KEY, session)
   },
   async login() {
@@ -66,6 +68,14 @@ const request = createRequestClient({
 })
 
 export const api = {
+  profile: async () => {
+    const profile = await request<UserProfile>({ path: '/v1/me' })
+    activeUserId = profile.userId
+    return profile
+  },
+  updateProfile: (nickname: string | null) => request<UserProfile>({
+    path: '/v1/me', method: 'PATCH', data: { nickname } satisfies BodyFor<'/v1/me', 'patch'>,
+  }),
   topics: (cursor?: string) => request<TopicList>({
     path: '/v1/topics' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
   }),
@@ -110,10 +120,12 @@ export type PendingGeneration = {
   phase?: GenerationJob['phase']
 }
 
-const PENDING_KEY = `${SESSION_KEY}.generation.v1`
+function userStorageKey(key: string) {
+  return `${key}.${activeUserId ?? 'unresolved'}`
+}
 
 export function readPendingGenerations(): PendingGeneration[] {
-  const entries = readSaved<PendingGeneration[]>(PENDING_KEY)
+  const entries = readSaved<PendingGeneration[]>(userStorageKey(`${SESSION_KEY}.generation.v1`))
   if (!Array.isArray(entries)) return []
   const valid = entries.filter((entry) => entry?.kind === 'generate' && typeof entry.key === 'string'
     && typeof entry.requestedAt === 'number'
@@ -125,13 +137,13 @@ export function readPendingGenerations(): PendingGeneration[] {
 }
 
 export function savePendingGenerations(entries: PendingGeneration[]) {
-  save(PENDING_KEY, entries.length ? entries : undefined)
+  save(userStorageKey(`${SESSION_KEY}.generation.v1`), entries.length ? entries : undefined)
 }
 
 const RESTART_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.restart.dev.v1' : 'qingzhi.restart.wechat.v1'
 
 export function readRestartGroup(): RestartGroup | undefined {
-  const group = readSaved<RestartGroup>(RESTART_KEY)
+  const group = readSaved<RestartGroup>(userStorageKey(RESTART_KEY))
   if (group && typeof group.quizId === 'string' && typeof group.topicTitle === 'string'
       && typeof group.quizExpiresAt === 'string') return group
 }
@@ -139,5 +151,5 @@ export function readRestartGroup(): RestartGroup | undefined {
 export function saveRestartGroup(group?: RestartGroup) {
   const restart = group && { quizId: group.quizId, topicTitle: group.topicTitle, quizExpiresAt: group.quizExpiresAt,
     attemptId: group.attemptId, answeredCount: group.answeredCount, totalQuestions: group.totalQuestions }
-  save(RESTART_KEY, restart)
+  save(userStorageKey(RESTART_KEY), restart)
 }

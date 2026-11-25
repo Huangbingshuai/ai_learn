@@ -3,7 +3,7 @@ export type { Session } from './types'
 
 export type RequestOptions = {
   path: string
-  method?: 'GET' | 'POST' | 'PUT'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
   data?: object
   idempotencyKey?: string
 }

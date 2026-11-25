@@ -4,16 +4,19 @@ import { api, type PendingGeneration, type RestartGroup } from '../api/client'
 import { messageForError } from '../api/request'
 import type { Topic } from '../api/types'
 import cover from '../assets/cover.webp'
-import { Action, ErrorNote } from '../components/comic'
+import { Action, ErrorNote, Sheet } from '../components/comic'
+import type { UserProfile } from '../api/types'
 import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
 
 export function HomeScreen({
-  input, error, restart, pending, onEdit, onError, onGenerate, onTopic, onPending, onFixedQuiz, onRestart,
+  input, error, restart, pending, profile, onProfile, onEdit, onError, onGenerate, onTopic, onPending, onFixedQuiz, onRestart,
 }: {
   input: string
   error: string
   restart?: RestartGroup
   pending: PendingGeneration[]
+  profile?: UserProfile
+  onProfile: (nickname: string | null) => Promise<UserProfile>
   onEdit: (input: string) => void
   onError: (message: string) => void
   onGenerate: (topic: string) => void
@@ -28,7 +31,26 @@ export function HomeScreen({
   const [loadingMore, setLoadingMore] = useState(false)
   const [reload, setReload] = useState(0)
   const [now, setNow] = useState(Date.now)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [nickname, setNickname] = useState(profile?.nickname ?? '')
+  const [profileError, setProfileError] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
   const canRestart = restart && restartAvailable(restart.quizExpiresAt, now)
+
+  useEffect(() => setNickname(profile?.nickname ?? ''), [profile?.nickname])
+
+  async function saveNickname() {
+    setSavingProfile(true)
+    setProfileError('')
+    try {
+      await onProfile(nickname.trim() || null)
+      setProfileOpen(false)
+    } catch {
+      setProfileError('保存失败，请检查网络后重试。')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -88,6 +110,11 @@ export function HomeScreen({
       </View>
     </View>
     <Text className='home-caption'>一组 12 道题，每题都有讲解</Text>
+    {profile && <Button className='account-strip ui-button' hoverClass='press-offset' onClick={() => setProfileOpen(true)}>
+      <View className='account-avatar' aria-hidden>知</View>
+      <View className='account-name'><Text>{profile.nickname || '学习者'}</Text><Text className='account-hint'>个人资料</Text></View>
+      <Text className='coin-balance'>◈ {profile.coinBalance}</Text>
+    </Button>}
     <View className='topic-form'>
       <View className='topic-field'>
         <Input
@@ -165,5 +192,16 @@ export function HomeScreen({
       </View>}
     </View>
     {__QINGZHI_DEV_FIXED_QUIZ__ && <Action secondary onClick={onFixedQuiz}>打开开发固定题组</Action>}
+    {profileOpen && <Sheet title='我的资料' onClose={() => setProfileOpen(false)}>
+      <View className='profile-form'>
+        <Text className='profile-label'>昵称</Text>
+        <Input className='profile-input' type='nickname' value={nickname} maxlength={30}
+          placeholder='可选，默认显示「学习者」' onInput={(event) => setNickname(event.detail.value)} />
+        <View className='profile-wallet'><Text>金币余额</Text><Text className='coin-balance'>◈ {profile?.coinBalance ?? 0}</Text></View>
+        {profileError && <ErrorNote>{profileError}</ErrorNote>}
+        <Action disabled={savingProfile} onClick={() => { void saveNickname() }}>{savingProfile ? '正在保存…' : '保存昵称'}</Action>
+        <Text className='profile-note'>金币按账号累计。每道相同题目只结算首次作答。</Text>
+      </View>
+    </Sheet>}
   </>
 }

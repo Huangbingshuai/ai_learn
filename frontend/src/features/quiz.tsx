@@ -139,6 +139,10 @@ export function ReceiptView({ receipt, onEvidence }: { receipt: AnswerReceipt; o
         <Text>你的作答 {answerLabels(question, selectedOptionIds)}</Text>
         <Text className='correct-label'>正确答案 {answerLabels(question, correctOptionIds)}</Text>
       </View>
+      <Text className='coin-result'>{receipt.coinDelta > 0 ? `金币 +${receipt.coinDelta}`
+        : receipt.coinDelta < 0 ? `金币 ${receipt.coinDelta}`
+          : isCorrect ? '本题金币已结算' : receipt.coinBalance === 0 ? '金币为 0，余额不再减少' : '本题金币已结算'}
+        {'  ·  余额 '}{receipt.coinBalance}</Text>
     </View>
     <Text className='review-stem'>{question.stem}</Text>
     <AnswerOptions question={question} selected={selectedOptionIds} correct={correctOptionIds} />

@@ -6,7 +6,7 @@ import {
   type PendingGeneration, type RestartGroup, type TopicInput,
 } from '../../api/client'
 import { RequestError } from '../../api/request'
-import type { AnswerReceipt, Attempt, Evidence, LearningRecord } from '../../api/types'
+import type { AnswerReceipt, Attempt, Evidence, LearningRecord, UserProfile } from '../../api/types'
 import { Action, EvidenceSheet, Header, Sheet, Tabs, getWindowLayout } from '../../components/comic'
 import { makeKey, PENDING_UNSUBMITTED_AGE, pendingIdentity, prunePendingGenerations, restartAvailable } from '../../features/flow'
 import { GenerationScreen, type GenerationIntent } from '../../features/generation'
@@ -49,7 +49,29 @@ export default function Index() {
   const [visible, setVisible] = useState(true)
   const [evidence, setEvidence] = useState<Evidence[]>()
   const [confirmExit, setConfirmExit] = useState(false)
+  const [profile, setProfile] = useState<UserProfile>()
   const cache = useRef(new Map<string, LearningRecord>()).current
+  const profileUserId = useRef<string>()
+
+  function applyProfile(next: UserProfile) {
+    if (profileUserId.current !== next.userId) {
+      cache.clear()
+      profileUserId.current = next.userId
+      const userPending = readPendingGenerations()
+      pendingRef.current = userPending
+      setPending(userPending)
+      setRestart(readRestartGroup())
+    }
+    setProfile(next)
+  }
+
+  useEffect(() => {
+    let active = true
+    api.profile().then((next) => {
+      if (active) applyProfile(next)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [cache])
 
   useDidShow(() => {
     setLayout(getWindowLayout())
@@ -204,7 +226,12 @@ export default function Index() {
   function renderScreen() {
     switch (screen.name) {
       case 'home':
-        return <HomeScreen input={input} error={topicError} restart={restart} pending={pending}
+        return <HomeScreen input={input} error={topicError} restart={restart} pending={pending} profile={profile}
+          onProfile={async (nickname) => {
+            const next = await api.updateProfile(nickname)
+            applyProfile(next)
+            return next
+          }}
           onEdit={(next) => { setInput(next); setTopicError('') }} onError={setTopicError}
           onGenerate={launchGeneration} onTopic={(topic) => {
             updatePending((entries) => entries.filter((entry) => entry.title !== topic.title))
@@ -242,6 +269,7 @@ export default function Index() {
       }
       case 'quiz':
         return <QuizScreen attempt={screen.attempt} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onAnswer={(receipt) => {
+          void api.profile().then(applyProfile).catch(() => {})
           if (receipt.recordId) recordRestartGroup()
           else recordRestartGroup({ ...screen.attempt, answeredCount: receipt.answeredCount, totalQuestions: receipt.totalQuestions })
           setScreen({ name: 'feedback', attempt: screen.attempt, receipt })
