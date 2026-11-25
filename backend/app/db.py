@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -54,6 +55,47 @@ class CoinSettlement(Base):
     is_correct: Mapped[bool] = mapped_column(Boolean)
     coin_delta: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MistakeStatus(StrEnum):
+    TO_REVIEW = "TO_REVIEW"
+    MASTERED = "MASTERED"
+
+
+class MistakeItem(Base):
+    __tablename__ = "mistake_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "fingerprint", name="uq_mistake_user_fingerprint"),
+        CheckConstraint("wrong_count > 0", name="ck_mistake_wrong_count"),
+        CheckConstraint(
+            "status IN ('TO_REVIEW', 'MASTERED')", name="ck_mistake_status"
+        ),
+        Index(
+            "ix_mistakes_user_recent",
+            "user_id",
+            text("last_wrong_at DESC"),
+            text("fingerprint DESC"),
+        ),
+        Index("ix_mistakes_user_status", "user_id", "status"),
+        Index("ix_mistakes_user_topic", "user_id", "topic_key"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    latest_receipt: Mapped[dict] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    wrong_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    first_wrong_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_wrong_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(12), default=MistakeStatus.TO_REVIEW.value, server_default="TO_REVIEW"
+    )
+    mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):

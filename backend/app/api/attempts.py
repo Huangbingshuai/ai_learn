@@ -1,7 +1,4 @@
-import json
-import unicodedata
 from datetime import datetime, timedelta
-from hashlib import sha256
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -24,6 +21,7 @@ from app.db import (
     new_id,
     utcnow,
 )
+from app.domain.questions import question_fingerprint
 from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, validate_quiz
 from app.domain.summaries import RULES_VERSION as SUMMARY_RULES_VERSION
 from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
@@ -281,27 +279,11 @@ class AnswerReceipt(BaseModel):
     recordId: str | None = None
 
 
-def _normalized_question_text(value: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
-
-
-def _question_fingerprint(question: dict) -> str:
-    identity = {
-        "type": question["type"],
-        "stem": _normalized_question_text(question["stem"]),
-        "options": sorted(
-            _normalized_question_text(option["text"]) for option in question["options"]
-        ),
-    }
-    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tuple[int, int]:
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise not_found()
-    fingerprint = _question_fingerprint(question)
+    fingerprint = question_fingerprint(question)
     previous = db.scalar(
         select(CoinSettlement).where(
             CoinSettlement.user_id == user_id,
