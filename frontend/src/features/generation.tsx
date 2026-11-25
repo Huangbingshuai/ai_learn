@@ -44,7 +44,7 @@ function jobFailure(job: GenerationJob): Failure {
   }
 }
 
-export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidTopic, onStartAgain, onJobId }: {
+export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidTopic, onStartAgain, onJobId, onFailed }: {
   intent: GenerationIntent
   visible: boolean
   onCancel: (finished: boolean) => void
@@ -52,6 +52,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
   onInvalidTopic: (message: string) => void
   onStartAgain: () => void
   onJobId: (id: string) => void
+  onFailed: () => void
 }) {
   const [failure, setFailure] = useState<Failure>()
   const [status, setStatus] = useState<GenerationJob>()
@@ -62,8 +63,8 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
   const jobId = useRef(intent.kind === 'generate' ? intent.jobId : undefined)
   const group = useRef<QuizGroup>()
   const attemptKey = `${intent.key}-attempt`
-  const callbacks = useRef({ onOpen, onInvalidTopic, onJobId })
-  callbacks.current = { onOpen, onInvalidTopic, onJobId }
+  const callbacks = useRef({ onOpen, onInvalidTopic, onJobId, onFailed })
+  callbacks.current = { onOpen, onInvalidTopic, onJobId, onFailed }
 
   useEffect(() => {
     if (!visible || failure || intent.kind !== 'generate') return
@@ -102,6 +103,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
             setStatus(result)
             setConnecting(false)
             if (result.status === 'FAILED') {
+              callbacks.current.onFailed()
               setFailure(jobFailure(result))
               return
             }
@@ -133,6 +135,10 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
         }
         const unavailable = group.current && attemptNeedsRegeneration(problem)
         const insufficient = requestError?.code === 'SOURCE_INSUFFICIENT'
+        if (unavailable || insufficient || requestError?.code === 'MISSING_QUIZ'
+          || requestError?.status === 404 || (requestError && !requestError.retryable)) {
+          callbacks.current.onFailed()
+        }
         setFailure({
           title: unavailable ? '这组练习已不可用' : insufficient ? '这个主题的依据不足' : '题目暂时没准备好',
           description: unavailable ? '可以重新生成一组练习。' : messageForError(problem),

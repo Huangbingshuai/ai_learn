@@ -1,5 +1,5 @@
 import Taro from '@tarojs/taro'
-import { makeKey } from '../features/flow'
+import { makeKey, prunePendingGenerations } from '../features/flow'
 import { createRequestClient, readResponse, RequestError, type RequestOptions, type Session } from './request'
 import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, QuizGroup, RecordPage, TopicList } from './types'
 
@@ -102,19 +102,22 @@ export type PendingGeneration = {
   key: string
   requestedAt: number
   jobId?: string
+  status?: GenerationJob['status']
+  phase?: GenerationJob['phase']
 }
 
 const PENDING_KEY = `${SESSION_KEY}.generation.v1`
-const PENDING_AGE = 48 * 60 * 60 * 1000
 
 export function readPendingGenerations(): PendingGeneration[] {
   const entries = readSaved<PendingGeneration[]>(PENDING_KEY)
   if (!Array.isArray(entries)) return []
-  const cutoff = Date.now() - PENDING_AGE
-  return entries.filter((entry) => entry?.kind === 'generate' && typeof entry.key === 'string'
-    && typeof entry.requestedAt === 'number' && entry.requestedAt > cutoff
+  const valid = entries.filter((entry) => entry?.kind === 'generate' && typeof entry.key === 'string'
+    && typeof entry.requestedAt === 'number'
     && typeof entry.title === 'string' && entry.input && typeof entry.input === 'object'
-    && ('topic' in entry.input || 'topicKey' in entry.input))
+    && ('topic' in entry.input
+      ? typeof entry.input.topic === 'string'
+      : typeof entry.input.topicKey === 'string'))
+  return prunePendingGenerations(valid)
 }
 
 export function savePendingGenerations(entries: PendingGeneration[]) {
