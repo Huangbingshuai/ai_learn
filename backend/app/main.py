@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api import attempts, jobs, records, topics
+from app.api import attempts, jobs, profile, records, topics
 from app.api.auth import exchange_wechat_code, local_router, router
 from app.api.errors import RequestBodyLimit, install_errors
 from app.config import Settings
@@ -18,6 +18,7 @@ def create_app(
     api.add_middleware(RequestBodyLimit)
     install_errors(api)
     api.include_router(router, prefix="/v1")
+    api.include_router(profile.router, prefix="/v1")
     api.include_router(attempts.router, prefix="/v1")
     api.include_router(records.router, prefix="/v1")
     api.include_router(topics.router, prefix="/v1")

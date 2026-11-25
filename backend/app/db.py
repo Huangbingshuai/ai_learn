@@ -37,6 +37,23 @@ class User(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
     app_id: Mapped[str] = mapped_column(String(80))
     openid: Mapped[str] = mapped_column(String(128))
+    nickname: Mapped[str | None] = mapped_column(String(30))
+    coin_balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class CoinSettlement(Base):
+    __tablename__ = "coin_settlements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_fingerprint", name="uq_coin_user_question"),
+        CheckConstraint("coin_delta BETWEEN -5 AND 10", name="ck_coin_delta"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    question_fingerprint: Mapped[str] = mapped_column(String(64))
+    is_correct: Mapped[bool] = mapped_column(Boolean)
+    coin_delta: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):

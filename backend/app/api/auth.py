@@ -29,6 +29,7 @@ class DeviceLogin(BaseModel):
 class LoginView(BaseModel):
     accessToken: str
     expiresAt: datetime
+    userId: str
 
 
 def wechat_unavailable() -> ApiError:
@@ -82,7 +83,7 @@ def issue_session(db, app_id: str, openid: str) -> LoginView:
                 user_id=user_id, token_digest=digest(token), created_at=created, expires_at=expires
             )
         )
-    return LoginView(accessToken=token, expiresAt=expires)
+    return LoginView(accessToken=token, expiresAt=expires, userId=user_id)
 
 
 def limit_login(db, request: Request) -> None:
