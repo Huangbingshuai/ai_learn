@@ -742,6 +742,8 @@ export interface components {
             topicKey: string;
             /** Title */
             title: string;
+            /** Originalinput */
+            originalInput?: string | null;
             /**
              * Art
              * @enum {string}

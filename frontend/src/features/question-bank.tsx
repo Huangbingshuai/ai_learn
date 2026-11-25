@@ -149,6 +149,8 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
           <View className='topic-symbol' aria-hidden />
           <View className='topic-library-copy'>
             <Text className='topic-title'>{topic.title}</Text>
+            {topic.originalInput && topic.originalInput.trim() !== topic.title.trim()
+              && <Text className='topic-original-input'>原始主题：{topic.originalInput}</Text>}
           </View>
           <Text className='topic-arrow' aria-hidden>›</Text>
         </Button>
