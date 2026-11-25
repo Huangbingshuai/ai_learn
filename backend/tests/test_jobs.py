@@ -171,3 +171,26 @@ def test_job_poll_returns_only_public_provider_failure(client, database, login):
     assert result["quizId"] is None
     assert set(result["error"]) == {"code", "message", "requestId", "retryable"}
     assert not result["error"]["retryable"]
+
+
+def test_zero_daily_limits_allow_unlimited_generation(database, settings):
+    config = settings.model_copy(
+        update={"user_daily_generation_limit": 0, "global_daily_generation_limit": 0}
+    )
+    with TestClient(create_app(config, database)) as client:
+        token = client.post("/v1/dev/auth", json={"deviceId": "unlimited-device"}).json()[
+            "accessToken"
+        ]
+        headers = {"Authorization": f"Bearer {token}"}
+        for index in range(12):
+            assert submit(client, headers, "四季", f"unlimited-{index}").status_code == 202
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(GenerationJob)) == 12
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(RateLimit)
+                .where(RateLimit.key.like("generation:%"))
+            )
+            == 0
+        )

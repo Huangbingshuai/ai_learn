@@ -42,7 +42,7 @@ def database():
 
 @pytest.fixture
 def settings():
-    return Settings(app_env="development", wechat_app_id="test-wechat")
+    return Settings(_env_file=None, app_env="development", wechat_app_id="test-wechat")
 
 
 def stub_exchange(_settings, code):
