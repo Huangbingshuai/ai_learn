@@ -142,7 +142,11 @@
 }
 .field-error { display: block; color: var(--red-ink); font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
 .topic-picker { margin: 21px 0 13px; }
+.topic-heading { display: flex; align-items: center; justify-content: space-between; }
+.topic-heading .h2 { margin-bottom: 11px; }
+.topic-manage { margin-bottom: 10px; padding: 3px 9px; border: 1px solid var(--ink); border-radius: 3px 7px; color: var(--blue); font-size: 12px; font-weight: 800; }
 .topic-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.topic-card { position: relative; flex: 0 0 calc(50% - 5px); min-width: 0; }
 .topic {
   position: relative;
   display: flex;
@@ -160,6 +164,11 @@
   font-size: 13px;
   font-weight: 800;
 }
+.topic-card > .topic { width: 100%; flex: initial; }
+.topic.is-managing { padding-right: 28px; }
+.topic-delete { position: absolute; top: 4px; right: 4px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--ink); border-radius: 50%; background: var(--pink); color: var(--ink); font-size: 17px; font-weight: 800; line-height: 1; }
+.topic-delete-actions { display: flex; gap: 10px; }
+.topic-delete-actions .action { flex: 1; }
 .topic.moon { background: var(--pink); }
 .topic.saved-topic { background: var(--sky); }
 .topic-title { min-width: 0; overflow-wrap: anywhere; }

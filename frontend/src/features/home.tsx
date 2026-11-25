@@ -35,6 +35,10 @@ export function HomeScreen({
   const [nickname, setNickname] = useState(profile?.nickname ?? '')
   const [profileError, setProfileError] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
+  const [expandedTopics, setExpandedTopics] = useState(false)
+  const [managingTopics, setManagingTopics] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Topic>()
+  const [deletingTopic, setDeletingTopic] = useState(false)
   const canRestart = restart && restartAvailable(restart.quizExpiresAt, now)
 
   useEffect(() => setNickname(profile?.nickname ?? ''), [profile?.nickname])
@@ -96,6 +100,23 @@ export function HomeScreen({
       setLoadingMore(false)
     }
   }
+
+  async function deleteTopic() {
+    if (!deleteTarget || deletingTopic) return
+    setDeletingTopic(true)
+    setTopicLoadError('')
+    try {
+      await api.deleteTopic(deleteTarget.topicKey)
+      setDeleteTarget(undefined)
+      setReload((version) => version + 1)
+    } catch (problem) {
+      setTopicLoadError(messageForError(problem))
+    } finally {
+      setDeletingTopic(false)
+    }
+  }
+
+  const visibleTopics = topics?.slice(0, expandedTopics ? undefined : 4)
 
   return <>
     <View className='comic-cover'>
@@ -167,17 +188,24 @@ export function HomeScreen({
       </Button>}
     </View>}
     <View className='topic-picker'>
-      <Text className='h2'>已保存主题</Text>
+      <View className='topic-heading'>
+        <Text className='h2'>已保存主题</Text>
+        {topics && <Button className='topic-manage ui-button' hoverClass='none'
+          onClick={() => setManagingTopics((value) => !value)}>{managingTopics ? '完成' : '管理'}</Button>}
+      </View>
       {topics && <View className='topic-options'>
-        {topics.map((topic) => <Button
-          className={`topic ui-button ${topic.art === 'topic' ? 'saved-topic' : topic.art}`}
-          key={topic.topicKey}
-          hoverClass='press-offset'
-          onClick={() => onTopic(topic)}
-        >
-          <View className='topic-symbol' aria-hidden />
-          <Text className='topic-title'>{topic.title}</Text><Text className='topic-arrow' aria-hidden>›</Text>
-        </Button>)}
+        {visibleTopics?.map((topic) => <View className='topic-card' key={topic.topicKey}>
+          <Button
+            className={`topic ui-button ${topic.art === 'topic' ? 'saved-topic' : topic.art}${managingTopics ? ' is-managing' : ''}`}
+            hoverClass='press-offset'
+            onClick={() => onTopic(topic)}
+          >
+            <View className='topic-symbol' aria-hidden />
+            <Text className='topic-title'>{topic.title}</Text><Text className='topic-arrow' aria-hidden>›</Text>
+          </Button>
+          {managingTopics && topic.canDelete && <Button className='topic-delete ui-button' hoverClass='row-press'
+            aria-label={`删除主题${topic.title}`} onClick={() => setDeleteTarget(topic)}>×</Button>}
+        </View>)}
       </View>}
       {!topics && (topicLoadError ? <View className='topic-load-error'>
         <ErrorNote>{topicLoadError}</ErrorNote>
@@ -185,12 +213,24 @@ export function HomeScreen({
       </View> : <Text className='stage-note'>正在加载主题…</Text>)}
       {topics?.length === 0 && <Text className='stage-note'>出题成功后，主题会出现在这里。</Text>}
       {topics && topicLoadError && <ErrorNote>{topicLoadError}</ErrorNote>}
-      {nextCursor && <View className='topic-load-more'>
+      {topics && topics.length > 4 && <View className='topic-load-more'>
+        <Action secondary onClick={() => setExpandedTopics((value) => !value)}>
+          {expandedTopics ? '收起主题' : `展开全部 ${topics.length}${nextCursor ? '+' : ''} 项`}
+        </Action>
+      </View>}
+      {expandedTopics && nextCursor && <View className='topic-load-more'>
         <Action secondary disabled={loadingMore} onClick={() => { void loadMore() }}>
           {loadingMore ? '正在加载…' : '查看更多主题'}
         </Action>
       </View>}
     </View>
+    {deleteTarget && <Sheet title='删除已保存主题？' onClose={() => setDeleteTarget(undefined)}>
+      <Text className='body-copy'>将从主题列表中移除「{deleteTarget.title}」。已有学习记录会保留。</Text>
+      <View className='topic-delete-actions'>
+        <Action secondary disabled={deletingTopic} onClick={() => setDeleteTarget(undefined)}>取消</Action>
+        <Action disabled={deletingTopic} onClick={() => { void deleteTopic() }}>{deletingTopic ? '正在删除…' : '确认删除'}</Action>
+      </View>
+    </Sheet>}
     {__QINGZHI_DEV_FIXED_QUIZ__ && <Action secondary onClick={onFixedQuiz}>打开开发固定题组</Action>}
     {profileOpen && <Sheet title='我的资料' onClose={() => setProfileOpen(false)}>
       <View className='profile-form'>

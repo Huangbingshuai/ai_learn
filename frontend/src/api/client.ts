@@ -79,6 +79,9 @@ export const api = {
   topics: (cursor?: string) => request<TopicList>({
     path: '/v1/topics' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
   }),
+  deleteTopic: (topicKey: string) => request<void>({
+    path: `/v1/topics/${encodeURIComponent(topicKey)}`, method: 'DELETE',
+  }),
   savedQuiz: (topicKey: string) => request<QuizGroup>({
     path: `/v1/topics/${encodeURIComponent(topicKey)}/quiz`, method: 'POST',
   }),
