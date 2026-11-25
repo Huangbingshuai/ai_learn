@@ -14,6 +14,7 @@ from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Record, RecordSummary, utcnow
 from app.domain.quizzes import Takeaway
 from app.domain.summaries import RULES_VERSION, SummaryContent
+from app.domain.topics import EvidenceView
 from app.quota import QuotaReached, summary_quota_full
 
 router = APIRouter(
@@ -38,6 +39,7 @@ class RecordItem(BaseModel):
 
 class RecordView(RecordItem):
     takeaways: list[Takeaway]
+    takeawayEvidence: list[EvidenceView]
     answers: list[AnswerReceipt]
     aiSummary: SummaryView
 
@@ -97,6 +99,7 @@ def read_record(record_id: UUID, db: DB, user_id: CurrentUser, request: Request)
     return RecordView(
         **_record_item(record).model_dump(),
         takeaways=record.takeaways,
+        takeawayEvidence=record.takeaway_evidence,
         answers=record.answers,
         aiSummary=_summary_view(summary, request),
     )

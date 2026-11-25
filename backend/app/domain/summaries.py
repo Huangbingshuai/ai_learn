@@ -32,6 +32,7 @@ def validate_summary(raw: dict, record: dict) -> SummaryContent:
     evidence_ids = {
         source["evidenceId"] for answer in answers.values() for source in answer["evidence"]
     }
+    evidence_ids.update(source["evidenceId"] for source in record.get("takeawayEvidence", []))
     if bool(summary.mistakeNotes) != bool(mistake_ids):
         raise ValueError("Mistake notes must reflect the actual score")
     for entry in [*summary.knowledgeReview, *summary.mistakeNotes, *summary.reviewSuggestions]:

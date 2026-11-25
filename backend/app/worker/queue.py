@@ -307,6 +307,7 @@ class Worker:
             snapshot = {
                 "topicTitle": record.topic_title,
                 "takeaways": record.takeaways,
+                "takeawayEvidence": record.takeaway_evidence,
                 "answers": record.answers,
             }
         raw = self._model_call(claim, self.ai.summarize, snapshot)

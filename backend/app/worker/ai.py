@@ -143,6 +143,7 @@ def _snapshot(record: dict) -> dict:
     return {
         "topicTitle": record["topicTitle"],
         "takeaways": [_select(item, "text", "evidenceIds") for item in record["takeaways"]],
+        "takeawayEvidence": _evidence(record.get("takeawayEvidence", [])),
         "answers": answers,
     }
 

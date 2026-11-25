@@ -434,3 +434,77 @@ def test_manual_retry_survives_quota_filled_after_enqueue(
             constrained.max_summary_calls,
         )
     assert called == [True]
+
+
+def test_takeaway_only_evidence_survives_quiz_cleanup_and_reaches_summary(
+    client, play, fixed_data, database, settings
+):
+    from types import SimpleNamespace
+
+    from app.db import Quiz
+    from app.worker.queue import Worker
+
+    headers, quiz_id, attempt = play
+    with database.begin() as db:
+        quiz = db.get(Quiz, quiz_id)
+        source = {**quiz.evidence[0], "evidenceId": "takeaway-only"}
+        quiz.evidence = [*quiz.evidence, source]
+        quiz.content = {
+            **quiz.content,
+            "takeaways": [{"text": source["text"], "evidenceIds": [source["evidenceId"]]}],
+        }
+
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    with database.begin() as db:
+        db.delete(db.get(Quiz, quiz_id))
+
+    def summarize(snapshot):
+        assert [evidence["evidenceId"] for evidence in snapshot["takeawayEvidence"]] == [
+            "takeaway-only"
+        ]
+        note = {"text": "回顾地轴倾斜。", "questionIds": [], "evidenceIds": ["takeaway-only"]}
+        return {"knowledgeReview": [note], "mistakeNotes": [], "reviewSuggestions": [note]}
+
+    assert Worker(settings, database, SimpleNamespace(summarize=summarize)).process_once()
+    result = client.get(f"/v1/records/{record_id}", headers=headers).json()
+    assert result["aiSummary"]["status"] == "SUCCEEDED"
+    assert result["takeawayEvidence"][0]["sourceUrl"] == source["sourceUrl"]
+    assert result["takeawayEvidence"][0]["evidenceId"] == "takeaway-only"
+
+
+@pytest.mark.parametrize("keep_quiz", [True, False])
+def test_migration_backfills_takeaway_sources_from_retained_records(
+    client, play, fixed_data, database, keep_quiz
+):
+    from alembic.config import Config
+
+    from alembic import command
+    from app.db import Quiz
+
+    headers, quiz_id, attempt = play
+    question_source_id = fixed_data["questions"][0]["evidenceIds"][0]
+    with database.begin() as db:
+        quiz = db.get(Quiz, quiz_id)
+        source = next(item for item in quiz.evidence if item["evidenceId"] == question_source_id)
+        snapshot_source = {**source, "evidenceId": "retained-quiz-only"}
+        quiz.evidence = [*quiz.evidence, snapshot_source]
+        quiz.content = {
+            **quiz.content,
+            "takeaways": [
+                {"text": source["text"], "evidenceIds": [question_source_id, "retained-quiz-only"]}
+            ],
+        }
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    if not keep_quiz:
+        with database.begin() as db:
+            db.delete(db.get(Quiz, quiz_id))
+
+    config = Config(str(DATA.parents[1] / "alembic.ini"))
+    with database.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0005_summary_retry_keys")
+        command.upgrade(config, "head")
+
+    result = client.get(f"/v1/records/{record_id}", headers=headers)
+    expected = {question_source_id, "retained-quiz-only"} if keep_quiz else {question_source_id}
+    assert {item["evidenceId"] for item in result.json()["takeawayEvidence"]} == expected

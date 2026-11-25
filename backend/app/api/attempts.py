@@ -253,6 +253,8 @@ def _save_completed_record(
     ).all()
     record_id = new_id()
     receipt.recordId = record_id
+    takeaways = quiz.content["takeaways"]
+    source_ids = {evidence_id for item in takeaways for evidence_id in item["evidenceIds"]}
     record = Record(
         id=record_id,
         attempt_id=attempt.id,
@@ -261,7 +263,10 @@ def _save_completed_record(
         completed_at=now,
         total_questions=receipt.totalQuestions,
         correct_count=attempt.correct_count,
-        takeaways=quiz.content["takeaways"],
+        takeaways=takeaways,
+        takeaway_evidence=[
+            source for source in quiz.evidence if source["evidenceId"] in source_ids
+        ],
         answers=[*earlier_answers, receipt.model_dump(mode="json")],
     )
     db.add(record)

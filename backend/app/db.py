@@ -168,6 +168,7 @@ class Record(Base):
     total_questions: Mapped[int] = mapped_column(Integer)
     correct_count: Mapped[int] = mapped_column(Integer)
     takeaways: Mapped[list] = mapped_column(JSONB)
+    takeaway_evidence: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     answers: Mapped[list] = mapped_column(JSONB)
 
 

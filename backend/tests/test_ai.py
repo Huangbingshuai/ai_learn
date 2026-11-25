@@ -27,7 +27,10 @@ def record():
         "topicTitle": "月相",
         "userId": "private-record-user",
         "takeaways": [
-            {"text": "月球反射太阳光。", "evidenceIds": ["e1"], "private": "private-takeaway"}
+            {"text": "月球反射太阳光。", "evidenceIds": ["e2"], "private": "private-takeaway"}
+        ],
+        "takeawayEvidence": [
+            {"evidenceId": "e2", "text": "月光来自反射。", "private": "private-takeaway-source"}
         ],
         "answers": [
             {
@@ -225,7 +228,8 @@ def test_summary_sends_only_the_learning_snapshot_and_accepts_citations(provider
     prompt = requests[0]["messages"][1]["content"]
     assert "private-" not in prompt
     snapshot = json.loads(prompt)
-    assert set(snapshot) == {"topicTitle", "takeaways", "answers"}
+    assert set(snapshot) == {"topicTitle", "takeaways", "takeawayEvidence", "answers"}
+    assert snapshot["takeawayEvidence"] == [{"evidenceId": "e2", "text": "月光来自反射。"}]
     assert snapshot["answers"][0]["question"]["options"][0] == {"optionId": "A", "text": "正确"}
     assert snapshot["answers"][0]["selectedOptionIds"] == ["B"]
     assert snapshot["answers"][0]["isCorrect"] is False

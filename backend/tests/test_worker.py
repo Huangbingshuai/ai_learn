@@ -299,7 +299,7 @@ def test_summary_automatic_retry_preserves_one_call_for_manual_retry(
     worker = worker_module.Worker(settings, database, ai)
 
     def timeout(record):
-        assert set(record) == {"topicTitle", "takeaways", "answers"}
+        assert set(record) == {"topicTitle", "takeaways", "takeawayEvidence", "answers"}
         raise AIError("PROVIDER_TIMEOUT", "模型服务响应超时。", True)
 
     ai.summary = timeout

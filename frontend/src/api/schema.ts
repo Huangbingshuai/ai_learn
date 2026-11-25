@@ -421,6 +421,8 @@ export interface components {
             correctCount: number;
             /** Takeaways */
             takeaways: components["schemas"]["Takeaway"][];
+            /** Takeawayevidence */
+            takeawayEvidence: components["schemas"]["EvidenceView"][];
             /** Answers */
             answers: components["schemas"]["AnswerReceipt"][];
             aiSummary: components["schemas"]["SummaryView"];

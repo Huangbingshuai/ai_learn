@@ -216,15 +216,22 @@ export function RecordScreen({ recordId, mode, questionId, visible, cache,
     <View className='result-section'>
       <Text className='h2'>这轮学到了什么</Text>
       <View className='summary-list'>
-        {record.takeaways.map((point, index) => <View className='summary-item takeaway' key={index}>
-          <Text className='bullet' aria-hidden>•</Text><Text className='summary-item-copy'>{point.text}</Text>
-        </View>)}
+        {record.takeaways.map((point, index) => {
+          const evidence = (record.takeawayEvidence ?? []).filter((source) => point.evidenceIds.includes(source.evidenceId))
+          return <View className='summary-item takeaway' key={index}>
+            <Text className='bullet' aria-hidden>•</Text>
+            <View className='summary-item-copy'>
+              <Text>{point.text}</Text>
+              <EvidenceLink evidence={evidence} onEvidence={onEvidence} />
+            </View>
+          </View>
+        })}
       </View>
     </View>
     {wrongCount > 0 ? <ComicRow onClick={onMistakes}>错题回顾 · {wrongCount} 题</ComicRow>
       : <Text className='review-record-empty'>这次全部答对，没有错题。</Text>}
     <Summary record={record} wrongCount={wrongCount} onReview={onReview} retrying={retrying}
-      loadError={loadError} retryError={retryError} onRetry={() => { void retrySummary() }}
+      loadError={loadError} retryError={retryError} onEvidence={onEvidence} onRetry={() => { void retrySummary() }}
       onRefresh={() => setReload((revision) => revision + 1)} />
     <View className='actions'>
       {mode === 'result' && <Action onClick={onHome}>再学一个主题</Action>}
@@ -233,10 +240,17 @@ export function RecordScreen({ recordId, mode, questionId, visible, cache,
   </>
 }
 
-function Summary({ record, wrongCount, onReview, retrying, loadError, retryError, onRetry, onRefresh }: {
+function EvidenceLink({ evidence, onEvidence }: { evidence: Evidence[]; onEvidence: (evidence: Evidence[]) => void }) {
+  if (!evidence.length) return null
+  return <Button className='summary-link ui-button' hoverClass='none'
+    onClick={() => onEvidence(evidence)}>查看出处</Button>
+}
+
+function Summary({ record, wrongCount, onReview, onEvidence, retrying, loadError, retryError, onRetry, onRefresh }: {
   record: LearningRecord
   wrongCount: number
   onReview: (id: string) => void
+  onEvidence: (evidence: Evidence[]) => void
   retrying: boolean
   loadError: string
   retryError: string
@@ -264,19 +278,24 @@ function Summary({ record, wrongCount, onReview, retrying, loadError, retryError
       <ErrorNote>{loadError}</ErrorNote><Action secondary onClick={onRefresh}>重新检查总结</Action>
     </View>}
     {ready && <>
-      <SummaryList title='知识回顾' entries={ready.knowledgeReview} record={record} onReview={onReview} />
+      <SummaryList title='知识回顾' entries={ready.knowledgeReview} record={record} onReview={onReview} onEvidence={onEvidence} />
       {wrongCount > 0
-        ? <SummaryList title='易错点' entries={ready.mistakeNotes} record={record} onReview={onReview} />
+        ? <SummaryList title='易错点' entries={ready.mistakeNotes} record={record} onReview={onReview} onEvidence={onEvidence} />
         : <View className='summary-section'><Text className='h3'>作答回顾</Text>
           <Text className='summary-copy review-record-empty'>这组题全部答对，可以用下面的建议再巩固一下。</Text>
         </View>}
-      <SummaryList title={wrongCount > 0 ? '复习建议' : '巩固建议'} entries={ready.reviewSuggestions} record={record} onReview={onReview} />
+      <SummaryList title={wrongCount > 0 ? '复习建议' : '巩固建议'} entries={ready.reviewSuggestions}
+        record={record} onReview={onReview} onEvidence={onEvidence} />
     </>}
   </View>
 }
 
-function SummaryList({ title, entries, record, onReview }: {
-  title: string; entries: SummaryEntry[]; record: LearningRecord; onReview: (id: string) => void
+function SummaryList({ title, entries, record, onReview, onEvidence }: {
+  title: string
+  entries: SummaryEntry[]
+  record: LearningRecord
+  onReview: (id: string) => void
+  onEvidence: (evidence: Evidence[]) => void
 }) {
   return <View className='summary-section'>
     <Text className='h3'>{title}</Text>
@@ -287,12 +306,16 @@ function SummaryList({ title, entries, record, onReview }: {
           ? record.answers.find(({ evidence }) => evidence.some((item) => entry.evidenceIds.includes(item.evidenceId)))
           : undefined
         const answers = evidenceReference ? [evidenceReference] : references
+        const questionSourceIds = new Set(answers.flatMap(({ evidence }) => evidence.map(({ evidenceId }) => evidenceId)))
+        const evidence = (record.takeawayEvidence ?? []).filter(({ evidenceId }) =>
+          entry.evidenceIds.includes(evidenceId) && !questionSourceIds.has(evidenceId))
         return <View className='summary-item' key={index}>
           <Text className='bullet' aria-hidden>•</Text>
           <View className='summary-item-copy'>
             <Text>{entry.text}</Text>
             {answers.map(({ question }) => <Button className='summary-link ui-button' key={question.questionId}
               hoverClass='none' onClick={() => onReview(question.questionId)}>查看第 {question.index + 1} 题</Button>)}
+            <EvidenceLink evidence={evidence} onEvidence={onEvidence} />
           </View>
         </View>
       })}
