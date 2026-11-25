@@ -19,10 +19,16 @@ def request(client, method, path, *, idempotent=False, **kwargs):
 
 
 def wait_for(client, path, timeout, field=None):
+    started = monotonic()
     until = monotonic() + timeout
+    previous = None
     while monotonic() < until:
         result = request(client, "GET", path)
         job = result[field] if field else result
+        state = (job["status"], job.get("phase"))
+        if state != previous:
+            print(f"已等 {monotonic() - started:.0f} 秒，当前状态：{state}", flush=True)
+            previous = state
         if job["status"] == "SUCCEEDED":
             return result
         if job["status"] == "FAILED":
@@ -32,10 +38,19 @@ def wait_for(client, path, timeout, field=None):
     raise TimeoutError(f"AI task did not finish before local timeout: {path}")
 
 
-def run_topic(client, topic, timeout):
+def run_topic(client, topic, timeout, *, expect_saved=False):
     job = request(client, "POST", "/v1/generation-jobs", json={"topic": topic}, idempotent=True)
     print(f"{topic} 生成任务已提交 {job['jobId']}", flush=True)
     generated = wait_for(client, f"/v1/generation-jobs/{job['jobId']}", timeout)
+    if expect_saved:
+        saved = request(client, "GET", "/v1/topics")["items"]
+        assert (
+            sum(
+                item["title"] == generated["topicTitle"] and item["art"] == "topic"
+                for item in saved
+            )
+            == 1
+        )
     attempt = request(
         client, "POST", "/v1/attempts", json={"quizId": generated["quizId"]}, idempotent=True
     )
@@ -65,6 +80,8 @@ def run_topic(client, topic, timeout):
             attempt = request(client, "GET", path)
 
     assert types == {"single", "multi", "judge"}
+    sources = {evidence["sourceUrl"] for receipt in receipts for evidence in receipt["evidence"]}
+    print(f"{topic} 引用来源：{'，'.join(sorted(sources))}", flush=True)
     record_id = receipts[-1]["recordId"]
     record_path = f"/v1/records/{record_id}"
     basic = request(client, "GET", record_path)
@@ -91,12 +108,13 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--topic", action="append")
     parser.add_argument("--timeout", type=float, default=720)
+    parser.add_argument("--expect-saved-topic", action="store_true")
     args = parser.parse_args()
     with httpx.Client(base_url=args.api, timeout=15, trust_env=False) as client:
         session = request(client, "POST", "/v1/dev/auth", json={"deviceId": f"smoke-{uuid4().hex}"})
         client.headers["Authorization"] = f"Bearer {session['accessToken']}"
         for topic in args.topic or ["四季成因", "月相变化"]:
-            run_topic(client, topic, args.timeout)
+            run_topic(client, topic, args.timeout, expect_saved=args.expect_saved_topic)
 
 
 if __name__ == "__main__":
