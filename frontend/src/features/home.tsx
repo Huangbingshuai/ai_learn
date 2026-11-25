@@ -56,7 +56,7 @@ export function HomeScreen({
     <View className='topic-form'>
       <View className='topic-field'>
         <Input className={`topic-input${error ? ' invalid' : ''}`} type='text' value={input} maxlength={-1}
-          confirmType='go' placeholder='输入主题，例如「为什么会有四季」'
+          confirmType='go' placeholder='输入你想弄懂的问题'
           placeholderStyle='color: #60566c' aria-label='学习主题'
           onInput={(event) => onEdit(event.detail.value)} onConfirm={submitTopic} />
         <Text className='char-count'>{topicLength(input)} / 80</Text>
@@ -82,7 +82,9 @@ export function HomeScreen({
           <Text className='continue-meta'>{intent.status === 'SUCCEEDED'
             ? '已生成 · 开始答题' : intent.phase ? generationPhases[intent.phase] : '正在出题'}</Text>
         </View>
-        <Action onClick={() => onPending(intent)}>继续</Action>
+        <Action disabled={intent.status === 'QUEUED' || intent.status === 'RUNNING'} onClick={() => onPending(intent)}>
+          {intent.status === 'SUCCEEDED' ? '开始答题' : intent.status === 'FAILED' ? '重新生成' : '生成中'}
+        </Action>
       </View>)}
       {restart && <View className='continue-row-shell'>
         <View className='continue-copy'>

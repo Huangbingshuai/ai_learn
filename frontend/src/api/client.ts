@@ -90,9 +90,11 @@ export const api = {
     path: '/v1/generation-jobs', method: 'POST', data: data satisfies BodyFor<'/v1/generation-jobs', 'post'>, idempotencyKey,
   }),
   job: (id: string) => request<GenerationJob>({ path: `/v1/generation-jobs/${encodeURIComponent(id)}` }),
-  fixedQuiz: __QINGZHI_DEV_FIXED_QUIZ__ ? (idempotencyKey: string) => request<QuizGroup>({
-    path: '/v1/dev/quizzes/fixed', method: 'POST', idempotencyKey,
-  }) : undefined,
+  currentJob: () => request<GenerationJob | null>({ path: '/v1/generation-jobs/current' }),
+  activeAttempts: () => request<{ items: Attempt[] }>({ path: '/v1/attempts/active' }),
+  saveDraft: (attemptId: string, selectedOptionIds: string[]) => request<Attempt>({
+    path: `/v1/attempts/${encodeURIComponent(attemptId)}/draft`, method: 'PUT', data: { selectedOptionIds },
+  }),
   startAttempt: (quizId: string, idempotencyKey: string) => request<Attempt>({
     path: '/v1/attempts', method: 'POST', data: { quizId } satisfies BodyFor<'/v1/attempts', 'post'>, idempotencyKey,
   }),
@@ -101,6 +103,9 @@ export const api = {
   answer: (attemptId: string, questionId: string, selectedOptionIds: string[]) => request<AnswerReceipt>({
     path: `/v1/attempts/${encodeURIComponent(attemptId)}/answers/${encodeURIComponent(questionId)}`,
     method: 'PUT', data: { selectedOptionIds } satisfies BodyFor<'/v1/attempts/{attempt_id}/answers/{question_id}', 'put'>,
+  }),
+  attemptAnswer: (attemptId: string, questionIndex: number) => request<AnswerReceipt>({
+    path: `/v1/attempts/${encodeURIComponent(attemptId)}/answers/${questionIndex}`,
   }),
   records: (cursor?: string) => request<RecordPage>({
     path: '/v1/records?limit=20' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),

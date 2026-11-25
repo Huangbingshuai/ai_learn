@@ -5,9 +5,8 @@ import { messageForError } from '../api/request'
 import type { Topic } from '../api/types'
 import { Action, ErrorNote, Sheet, StatusPanel } from '../components/comic'
 
-export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
+export function QuestionBankScreen({ onTopic }: {
   onTopic: (topic: Topic) => void
-  onFixedQuiz: () => void
 }) {
   const [topics, setTopics] = useState<Topic[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -135,20 +134,22 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
       <Button className='topic-batch-delete ui-button' hoverClass='row-press' disabled={!selectedTopics.length || deleting}
         onClick={() => setBatchDeleteOpen(true)}>删除已选主题{selectedTopics.length ? `（${selectedTopics.length}）` : ''}</Button>
     </View>}
-    {selectionMode && deletableTopics.length === 0 && <Text className='topic-selection-note'>推荐主题可以直接练习；生成的自建主题会出现在这里，支持勾选后批量删除。</Text>}
     {error && <ErrorNote>{error}</ErrorNote>}
     {loading ? <StatusPanel title='正在加载题库…' /> : topics.length === 0 ? <StatusPanel title='题库还是空的'>
       <Text className='body-copy'>回到“学习”输入感兴趣的内容，生成练习后会自动收进题库。</Text>
     </StatusPanel> : <View className='topic-library-list'>
       {topics.map((topic) => <View className='topic-library-row' key={topic.topicKey}>
-        <Button className={`topic ui-button topic-library-card ${topic.art === 'topic' ? 'saved-topic' : topic.art}${selectedKeys.has(topic.topicKey) ? ' is-selected' : ''}`}
-          hoverClass='press-offset' onClick={() => selectionMode && topic.canDelete ? toggleSelection(topic) : onTopic(topic)}>
+        <Button className={`topic ui-button topic-library-card user-topic${selectedKeys.has(topic.topicKey) ? ' is-selected' : ''}`}
+          hoverClass='press-offset' onClick={() => selectionMode ? toggleSelection(topic) : onTopic(topic)}>
           {selectionMode && topic.canDelete && <Text className={`topic-select-mark${selectedKeys.has(topic.topicKey) ? ' checked' : ''}`} aria-hidden>
             {selectedKeys.has(topic.topicKey) ? '✓' : ''}
           </Text>}
           <View className='topic-symbol' aria-hidden />
           <View className='topic-library-copy'>
             <Text className='topic-title'>{topic.title}</Text>
+            {topic.attemptId && topic.attemptStatus === 'ACTIVE' && typeof topic.answeredCount === 'number'
+              && typeof topic.totalQuestions === 'number'
+              && <Text className='topic-progress'>已答 {topic.answeredCount}/{topic.totalQuestions} 题</Text>}
             {topic.originalInput && topic.originalInput.trim() !== topic.title.trim()
               && <Text className='topic-original-input'>原始主题：{topic.originalInput}</Text>}
           </View>
@@ -168,11 +169,6 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
         disabled={deleting} onClick={() => setBatchDeleteOpen(true)}>删除已选主题（{selectedTopics.length}）</Button>}
     </View>}
     {error && !loading && <Action secondary onClick={() => setReload((value) => value + 1)}>重新加载</Action>}
-    {__QINGZHI_DEV_FIXED_QUIZ__ && <View className='fixed-quiz-card'>
-      <Text className='h3'>快速体验</Text>
-      <Text className='body-copy'>用内置示例题组体验答题和金币结算。</Text>
-      <Action secondary onClick={onFixedQuiz}>体验示例题组</Action>
-    </View>}
     {deleteTarget && <Sheet title='确认删除主题？' onClose={() => setDeleteTarget(undefined)}>
       <Text className='body-copy'>「{deleteTarget.title}」会从你的题库移除，已有学习记录仍会保留。</Text>
       <View className='topic-delete-actions'>
@@ -181,7 +177,7 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
       </View>
     </Sheet>}
     {batchDeleteOpen && <Sheet title={`删除 ${selectedTopics.length} 个主题？`} onClose={() => { if (!deleting) setBatchDeleteOpen(false) }}>
-      <Text className='body-copy'>选中的自建主题将从题库移除，已有学习记录会保留。推荐主题不会受影响。</Text>
+      <Text className='body-copy'>选中的主题将从题库移除，已有学习记录会保留。</Text>
       <View className='topic-delete-actions'>
         <Action secondary disabled={deleting} onClick={() => setBatchDeleteOpen(false)}>先保留</Action>
         <Action disabled={deleting} onClick={() => { void deleteSelectedTopics() }}>{deleting ? '正在删除…' : `确认删除 ${selectedTopics.length} 个`}</Action>

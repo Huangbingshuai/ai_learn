@@ -14,7 +14,6 @@ export default defineConfig<'webpack5'>(() => {
     throw new Error('QINGZHI_API_BASE_URL is required for a production build.')
   }
   const devAuth = development && (process.env.QINGZHI_DEV_AUTH || process.env.TARO_APP_DEV_AUTH) === '1'
-  const devFixedQuiz = devAuth && (process.env.QINGZHI_DEV_FIXED_QUIZ || process.env.TARO_APP_DEV_FIXED_QUIZ) === '1'
 
   return {
     projectName: 'qingzhi-weapp',
@@ -26,7 +25,6 @@ export default defineConfig<'webpack5'>(() => {
     defineConstants: {
       __QINGZHI_API_BASE_URL__: JSON.stringify(apiBaseUrl),
       __QINGZHI_DEV_AUTH__: JSON.stringify(devAuth),
-      __QINGZHI_DEV_FIXED_QUIZ__: JSON.stringify(devFixedQuiz),
     },
     framework: 'react',
     compiler: 'webpack5',

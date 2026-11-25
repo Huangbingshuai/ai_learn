@@ -8,12 +8,12 @@ import {
 import { RequestError } from '../../api/request'
 import type { AnswerReceipt, Attempt, Evidence, LearningRecord, UserProfile } from '../../api/types'
 import { Action, EvidenceSheet, Header, Sheet, Tabs, getWindowLayout } from '../../components/comic'
-import { makeKey, PENDING_UNSUBMITTED_AGE, pendingIdentity, prunePendingGenerations, restartAvailable } from '../../features/flow'
+import { makeKey, PENDING_UNSUBMITTED_AGE, prunePendingGenerations, restartAvailable } from '../../features/flow'
 import { GenerationScreen, type GenerationIntent } from '../../features/generation'
 import { HomeScreen } from '../../features/home'
 import { QuestionBankScreen } from '../../features/question-bank'
 import { ProfileScreen } from '../../features/profile'
-import { FeedbackScreen, QuizScreen, type ActiveAttempt } from '../../features/quiz'
+import { AnswerWorkspace, FeedbackScreen, QuizScreen, type ActiveAttempt } from '../../features/quiz'
 import { HistoryScreen, RecordScreen } from '../../features/records'
 import { MistakeBookScreen, MistakeDetailScreen } from '../../features/mistake-book'
 import { createMistakeBookState, type MistakeBookState } from '../../features/mistakes'
@@ -22,7 +22,7 @@ import './index.css'
 type ResultScreen = { name: 'result' | 'record'; recordId: string }
 type MistakesScreen = { name: 'mistakes'; recordId: string; from: ResultScreen }
 type Screen =
-  | { name: 'home' | 'questionBank' | 'history' | 'mistakeBook' | 'profile' }
+  | { name: 'home' | 'questionBank' | 'answer' | 'history' | 'mistakeBook' | 'profile' }
   | { name: 'generation'; intent: GenerationIntent }
   | { name: 'quiz'; attempt: ActiveAttempt; practiceFingerprint?: string }
   | { name: 'feedback'; attempt: ActiveAttempt; receipt: AnswerReceipt; practiceFingerprint?: string }
@@ -39,6 +39,7 @@ const titles: Record<Screen['name'], string> = {
   result: '本次结果',
   history: '学习记录',
   questionBank: '我的题库',
+  answer: '答题',
   profile: '我的',
   record: '记录详情',
   mistakes: '错题回顾',
@@ -144,6 +145,16 @@ export default function Index() {
     if (reconciling.current) return
     reconciling.current = true
     try {
+      const currentJob = await api.currentJob().catch(() => null)
+      if (currentJob) {
+        const existing = pendingRef.current.find((entry) => entry.jobId === currentJob.jobId)
+        const restored: PendingGeneration = existing ?? {
+          kind: 'generate', input: { topic: currentJob.topicTitle }, title: currentJob.topicTitle,
+          key: currentJob.jobId, jobId: currentJob.jobId, requestedAt: Date.parse(currentJob.createdAt),
+        }
+        updatePending(() => [{ ...restored, status: currentJob.status, phase: currentJob.phase }])
+        return
+      }
       const entries = prunePendingGenerations(pendingRef.current)
       if (!entries.length) {
         if (pendingRef.current.length) updatePending(() => entries)
@@ -163,8 +174,7 @@ export default function Index() {
         }
         try {
           const job = await api.job(entry.jobId)
-          if (job.status === 'FAILED') results.set(entry.key, { drop: true })
-          else results.set(entry.key, { drop: false, status: job.status, phase: job.phase })
+          results.set(entry.key, { drop: false, status: job.status, phase: job.phase })
         } catch (problem) {
           if (problem instanceof RequestError && problem.status === 404) {
             results.set(entry.key, { drop: true })
@@ -187,14 +197,15 @@ export default function Index() {
   useEffect(() => {
     if (screen.name !== 'home') return
     void reconcilePending()
+    const timer = setInterval(() => { void reconcilePending() }, 3000)
     const saved = readRestartGroup()
-    if (!saved) return
+    if (!saved) return () => clearInterval(timer)
     let active = true
     const lookup = saved.attemptId ? api.attempt(saved.attemptId) : api.latestAttempt(saved.quizId)
     lookup.then((attempt) => {
       if (active && attempt.status === 'ACTIVE') recordRestartGroup(attempt)
     }).catch(() => {})
-    return () => { active = false }
+    return () => { active = false; clearInterval(timer) }
   }, [screen.name])
 
   function openGeneration(intent: PendingGeneration) {
@@ -204,18 +215,28 @@ export default function Index() {
   function launchGeneration(topic: string, topicInput: TopicInput = { topic }) {
     setInput(topic)
     setTopicError('')
+    if (pendingRef.current.some((entry) => entry.status === 'QUEUED' || entry.status === 'RUNNING')) {
+      setTopicError('请先完成当前正在生成的题组。')
+      return
+    }
     const intent: PendingGeneration = {
       kind: 'generate', input: topicInput, title: topic, key: makeKey(), requestedAt: Date.now(),
     }
-    updatePending((entries) => prunePendingGenerations([
-      intent,
-      ...entries.filter((entry) => pendingIdentity(entry) !== pendingIdentity(intent)),
-    ]).slice(0, 20))
-    openGeneration(intent)
-  }
-
-  function launchFixed() {
-    if (__QINGZHI_DEV_FIXED_QUIZ__) setScreen({ name: 'generation', intent: { kind: 'fixed', key: makeKey() } })
+    updatePending(() => [intent])
+    void api.generate(topicInput, intent.key).then((job) => {
+      updatePending(() => [{ ...intent, jobId: job.jobId, status: job.status, phase: job.phase }])
+    }).catch(async (problem) => {
+      if (problem instanceof RequestError && problem.status === 409) {
+        const current = await api.currentJob().catch(() => null)
+        if (current) {
+          updatePending(() => [{ ...intent, jobId: current.jobId, title: current.topicTitle,
+            input: { topic: current.topicTitle }, status: current.status, phase: current.phase }])
+          return
+        }
+      }
+      updatePending(() => [])
+      setTopicError(problem instanceof RequestError ? problem.message : '生成失败，请稍后重试。')
+    })
   }
 
   function restartQuiz(group: RestartGroup) {
@@ -253,12 +274,21 @@ export default function Index() {
       case 'home':
         return <HomeScreen input={input} error={topicError} restart={restart} pending={pending}
           onEdit={(next) => { setInput(next); setTopicError('') }} onError={setTopicError}
-          onGenerate={launchGeneration} onPending={openGeneration} onRestart={restartQuiz} />
+          onGenerate={launchGeneration} onPending={(intent) => intent.status === 'FAILED'
+            ? launchGeneration(intent.title) : openGeneration(intent)} onRestart={restartQuiz} />
       case 'questionBank':
         return <QuestionBankScreen onTopic={(topic) => {
           updatePending((entries) => entries.filter((entry) => entry.title !== topic.title))
+          if (topic.attemptId && topic.attemptStatus === 'ACTIVE') {
+            void api.attempt(topic.attemptId).then(openAttempt).catch(() => {
+              setScreen({ name: 'generation', intent: { kind: 'saved', topicKey: topic.topicKey, title: topic.title, key: makeKey() } })
+            })
+            return
+          }
           setScreen({ name: 'generation', intent: { kind: 'saved', topicKey: topic.topicKey, title: topic.title, key: makeKey() } })
-        }} onFixedQuiz={launchFixed} />
+        }} />
+      case 'answer':
+        return <AnswerWorkspace onOpen={openAttempt} />
       case 'generation': {
         const { intent } = screen
         return <GenerationScreen intent={intent} visible={visible}
@@ -279,8 +309,7 @@ export default function Index() {
             entries.map((entry) => entry.key === intent.key ? { ...entry, jobId } : entry))}
           onFailed={() => { if (intent.kind === 'generate') forgetPending(intent.key) }}
           onStartAgain={() => {
-            if (intent.kind === 'fixed') launchFixed()
-            else if (intent.kind === 'restart' || intent.kind === 'resume') launchGeneration(intent.group.topicTitle)
+            if (intent.kind === 'restart' || intent.kind === 'resume') launchGeneration(intent.group.topicTitle)
             else if (intent.kind === 'saved') launchGeneration(intent.title, { topicKey: intent.topicKey })
             else {
               forgetPending(intent.key)
@@ -300,6 +329,11 @@ export default function Index() {
       case 'feedback':
         return <FeedbackScreen attempt={screen.attempt} receipt={screen.receipt} onOpen={openAttempt}
           onEvidence={setEvidence} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onResult={(recordId) => setScreen({ name: 'result', recordId })}
+          onPrevious={(index) => {
+            void api.attemptAnswer(screen.attempt.attemptId, index).then((receipt) => {
+              setScreen({ ...screen, receipt })
+            }).catch(() => {})
+          }}
           practiceFingerprint={screen.practiceFingerprint} onPracticeFinished={() => {
             if (screen.practiceFingerprint) setScreen({ name: 'mistakeDetail', fingerprint: screen.practiceFingerprint })
           }} />
@@ -354,12 +388,14 @@ export default function Index() {
     }
   }
 
-  const tab = screen.name === 'home' || screen.name === 'questionBank' || screen.name === 'mistakeBook' || screen.name === 'profile'
+  const tab = screen.name === 'quiz' || screen.name === 'feedback' ? 'answer'
+    : screen.name === 'home' || screen.name === 'questionBank' || screen.name === 'answer' || screen.name === 'mistakeBook' || screen.name === 'profile'
     ? screen.name
     : undefined
   const bodyHeight = Math.max(0, layout.windowHeight - layout.headerHeight - (tab ? layout.tabHeight + layout.safeBottom : 0))
-  const routeKey = screen.name === 'quiz' || screen.name === 'feedback'
+  const routeKey = screen.name === 'quiz'
     ? `${screen.name}:${screen.attempt.question.questionId}`
+    : screen.name === 'feedback' ? `${screen.name}:${screen.receipt.question.questionId}`
     : screen.name === 'generation' ? `generation:${screen.intent.key}`
       : screen.name
   return <View className='app-shell' style={{ height: `${layout.windowHeight}px` }}>

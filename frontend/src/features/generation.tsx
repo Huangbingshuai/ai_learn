@@ -8,7 +8,6 @@ import { FIRST_POLL_DELAY, formatElapsed, generationPhases, nextPollDelay } from
 
 export type GenerationIntent =
   | PendingGeneration
-  | { kind: 'fixed'; key: string }
   | { kind: 'saved'; topicKey: string; title: string; key: string }
   | { kind: 'restart'; group: RestartGroup; key: string }
   | { kind: 'resume'; group: RestartGroup; key: string }
@@ -89,12 +88,6 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
         if (!group.current) {
           if (intent.kind === 'restart') group.current = intent.group
           else if (intent.kind === 'saved') group.current = await api.savedQuiz(intent.topicKey)
-          else if (intent.kind === 'fixed') {
-            if (!api.fixedQuiz) throw new RequestError('CONFIGURATION', '开发固定题组未开启。', 0)
-            const fixed = await api.fixedQuiz(intent.key)
-            if (!active) return
-            group.current = fixed
-          }
           else {
             let result = job.current
             if (!result || result.status === 'QUEUED' || result.status === 'RUNNING') {
@@ -165,7 +158,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
   }, [attemptKey, failure, intent, retryTrigger, visible])
 
   const live = intent.kind === 'generate'
-  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' || intent.kind === 'resume' ? intent.group.topicTitle : intent.kind === 'saved' ? intent.title : '固定题组'
+  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' || intent.kind === 'resume' ? intent.group.topicTitle : intent.kind === 'saved' ? intent.title : '生成练习'
   const createdAt = status?.createdAt ? Date.parse(status.createdAt) : NaN
   const startedAt = Number.isFinite(createdAt) ? createdAt : live ? intent.requestedAt : now
   const phase = status?.status === 'SUCCEEDED' ? '正在打开练习'

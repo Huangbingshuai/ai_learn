@@ -29,9 +29,9 @@ function page(items: Mistake[], nextCursor: string | null = null): MistakePage {
   return { items, nextCursor, pendingCount: 3, topics: [{ topicKey: 'seasons', title: '四季成因' }] }
 }
 
-test('shows learning, question bank, mistake book and profile in bottom navigation', () => {
-  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'questionBank', 'mistakeBook', 'profile'])
-  assert.deepEqual(TAB_DESTINATIONS.map(({ label }) => label), ['学习', '题库', '错题本', '我的'])
+test('shows learning, question bank, answers, mistakes and profile in bottom navigation', () => {
+  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'questionBank', 'answer', 'mistakeBook', 'profile'])
+  assert.deepEqual(TAB_DESTINATIONS.map(({ label }) => label), ['学习', '题库', '答题', '错题本', '我的'])
 })
 
 test('changing status or topic filters clears stale pages but keeps total and topic options', () => {

@@ -5,11 +5,40 @@ import { attemptNeedsRegeneration, messageForError, RequestError } from '../api/
 import type { AnswerReceipt, Attempt, Evidence, Question } from '../api/types'
 import happy from '../assets/student-happy.webp'
 import surprised from '../assets/student-wow.webp'
-import { Action, ComicRow, ErrorNote, Tape } from '../components/comic'
+import { Action, ComicRow, ErrorNote, StatusPanel, Tape } from '../components/comic'
 import { optionAppearance, questionTypeLabels, selectOption } from './flow'
 import { practiceFinished } from './mistakes'
 
 export type ActiveAttempt = Attempt & { question: Question }
+
+export function AnswerWorkspace({ onOpen }: { onOpen: (attempt: Attempt) => void }) {
+  const [attempts, setAttempts] = useState<Attempt[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    api.activeAttempts().then((page) => {
+      if (active) setAttempts(page.items)
+    }).catch((problem) => {
+      if (active) setError(messageForError(problem))
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  if (loading) return <StatusPanel title='正在整理答题进度…' />
+  if (error) return <ErrorNote>{error}</ErrorNote>
+  if (!attempts.length) return <StatusPanel title='还没有进行中的练习' />
+  return <View className='answer-workspace-list'>
+    {attempts.map((attempt) => <View className='continue-row-shell' key={attempt.attemptId}>
+      <View className='continue-copy'>
+        <Text className='continue-title'>{attempt.topicTitle}</Text>
+        <Text className='continue-meta'>已答 {attempt.answeredCount}/{attempt.totalQuestions} 题</Text>
+      </View>
+      <Action onClick={() => onOpen(attempt)}>{attempt.answeredCount ? '继续' : '开始'}</Action>
+    </View>)}
+  </View>
+}
 
 export function ProgressMeter({ title, index, total, completed }: {
   title: string; index: number; total: number; completed: number
@@ -65,11 +94,12 @@ export function QuizScreen({ attempt, onAnswer, onRegenerate }: {
   onRegenerate: () => void
 }) {
   const { question } = attempt
-  const [selected, setSelected] = useState<string[]>([])
+  const [selected, setSelected] = useState<string[]>(attempt.draftOptionIds ?? [])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [unavailable, setUnavailable] = useState(false)
   const frozenSelection = useRef<string[]>()
+  const draftTimer = useRef<ReturnType<typeof setTimeout>>()
   const inFlight = useRef(false)
   const mounted = useRef(true)
 
@@ -78,8 +108,17 @@ export function QuizScreen({ attempt, onAnswer, onRegenerate }: {
     return () => { mounted.current = false }
   }, [])
 
+  useEffect(() => {
+    if (selected.join('|') === (attempt.draftOptionIds ?? []).join('|')) return
+    draftTimer.current = setTimeout(() => {
+      void api.saveDraft(attempt.attemptId, selected).catch(() => {})
+    }, 180)
+    return () => { if (draftTimer.current) clearTimeout(draftTimer.current) }
+  }, [attempt.attemptId, attempt.draftOptionIds, selected])
+
   async function submit() {
     if (!selected.length || inFlight.current) return
+    if (draftTimer.current) clearTimeout(draftTimer.current)
     frozenSelection.current ??= selected
     inFlight.current = true
     setPending(true)
@@ -158,13 +197,14 @@ export function ReceiptView({ receipt, onEvidence }: { receipt: AnswerReceipt; o
   </>
 }
 
-export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult, onRegenerate, practiceFingerprint, onPracticeFinished }: {
+export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult, onRegenerate, onPrevious, practiceFingerprint, onPracticeFinished }: {
   attempt: ActiveAttempt
   receipt: AnswerReceipt
   onEvidence: (evidence: Evidence[]) => void
   onOpen: (attempt: Attempt) => void
   onResult: (recordId: string) => void
   onRegenerate: () => void
+  onPrevious: (questionIndex: number) => void
   practiceFingerprint?: string
   onPracticeFinished?: () => void
 }) {
@@ -213,6 +253,7 @@ export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult,
     <ReceiptView receipt={receipt} onEvidence={onEvidence} />
     <View className='quiz-actions'>
       {error && <ErrorNote>{error}</ErrorNote>}
+      {receipt.question.index > 0 && <Action secondary onClick={() => onPrevious(receipt.question.index - 1)}>上一题</Action>}
       {unavailable ? <Action onClick={onRegenerate}>重新生成题组</Action> : <Action disabled={pending} onClick={() => { void proceed() }}>
         {practiceFingerprint && practiceFinished(receipt.answeredCount, receipt.totalQuestions)
           ? '返回错题详情'

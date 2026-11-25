@@ -3,6 +3,7 @@ import type { Mistake, MistakePage, MistakeStatus, MistakeTopic } from '../api/t
 export const TAB_DESTINATIONS = [
   { key: 'home', label: '学习' },
   { key: 'questionBank', label: '题库' },
+  { key: 'answer', label: '答题' },
   { key: 'mistakeBook', label: '错题本' },
   { key: 'profile', label: '我的' },
 ] as const
