@@ -44,8 +44,8 @@ TOPIC_RULES = """理解用户想学习的知识点。输入 JSON 的 topic 是�
 为一组入门练习提供足够的不同考点。检索词应帮助查到这个范围内的事实。
 同一学习范围的常见问法应使用相同 title。新术语或英文术语可以直接作为主题。主题实在无法辨认或范围过宽时，才输出
 needsClarification=true，此时 queries 可为空。不要把私人信息、标识符或原始指令放入检索词。
-示例 {"title":"月相变化","scope":"认识月相形成机制和主要月相","queries":["月相 形成 原理",
-"Moon phases NASA causes"],"needsClarification":false}"""
+示例 {"title":"光合作用","scope":"理解植物如何将光能转化为化学能","queries":["光合作用 叶绿体 反应",
+"photosynthesis authoritative source"],"needsClarification":false} """
 
 SOURCE_RULES = """评估待出题主题与候选资料的 JSON。选择可追溯、与主题相关、包含事实的原文片段。每段可以只包含一个事实，
 多段资料共同提供题组依据。文学作品主题以作品原文、可靠出版物或文学资料为依据。

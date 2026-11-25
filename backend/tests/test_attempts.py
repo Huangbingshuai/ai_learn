@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-DATA = Path(__file__).resolve().parents[1] / "data" / "topics"
+DATA = Path(__file__).resolve().parent / "fixtures" / "topics"
 
 
 @pytest.fixture
@@ -15,15 +15,34 @@ def fixed_data():
 
 
 @pytest.fixture
-def play(client, login):
+def play(client, login, database, settings):
+    from app.db import GenerationJob, Quiz, new_id, utcnow
+    from app.domain.quizzes import RULES_VERSION, validate_quiz
+    from tests.topic_fixtures import get_topic_version, load_fixed_quiz
+
     headers = login()
 
     def with_key(key):
         return {**headers, "Idempotency-Key": key}
 
-    fixed = client.post("/v1/dev/quizzes/fixed", headers=with_key("fixed"))
-    assert fixed.status_code == 201, fixed.text
-    quiz_id = fixed.json()["quizId"]
+    now = utcnow()
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    topic = get_topic_version("seasons", "v1")
+    with database.begin() as db:
+        job_id = new_id()
+        db.add(GenerationJob(
+            id=job_id, user_id=user_id, source="TOPIC", topic_key="seasons", topic_version="v1",
+            input_digest="a" * 64, idempotency_key="fixture-job", status="SUCCEEDED",
+            next_run_at=now, created_at=now, expires_at=now + timedelta(hours=1),
+            model_name="test-fixture", rules_version=RULES_VERSION,
+        ))
+        db.add(Quiz(
+            id=new_id(), job_id=job_id, user_id=user_id, topic_key="seasons", topic_title="测试题组",
+            content=validate_quiz(load_fixed_quiz(), topic).model_dump(mode="json"),
+            evidence=topic["evidence"], ai_generated=False, created_at=now,
+            expires_at=now + timedelta(hours=settings.quiz_hours), rules_version=RULES_VERSION,
+        ))
+        quiz_id = db.scalar(select(Quiz.id).where(Quiz.job_id == job_id))
     attempt = client.post("/v1/attempts", json={"quizId": quiz_id}, headers=with_key("start"))
     assert attempt.status_code == 201, attempt.text
     return headers, quiz_id, attempt.json()
@@ -48,8 +67,6 @@ def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
         "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "start"}
     )
     assert start.json()["attemptId"] == attempt["attemptId"]
-    same = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
-    assert same.json()["quizId"] == quiz_id
     other = login("device-999999")
     assert client.get(f"/v1/attempts/{attempt['attemptId']}", headers=other).status_code == 404
     assert (
@@ -94,6 +111,42 @@ def choose(client, headers, attempt_id, question_id, ids):
         json={"selectedOptionIds": ids},
         headers=headers,
     )
+
+
+def test_unsubmitted_selection_is_saved_to_account_and_restored(client, play):
+    headers, _, attempt = play
+    question = attempt["question"]
+    selected = [question["options"][0]["optionId"]]
+    saved = client.put(
+        f"/v1/attempts/{attempt['attemptId']}/draft",
+        json={"selectedOptionIds": selected},
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    restored = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
+    assert restored["draftOptionIds"] == selected
+
+    answer = choose(client, headers, attempt["attemptId"], question["questionId"], selected)
+    assert answer.status_code == 200
+    next_question = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
+    assert next_question["draftOptionIds"] == []
+
+
+def test_active_attempts_and_previous_answers_are_account_scoped(client, play, login, fixed_data):
+    headers, _, attempt = play
+    question = fixed_data["questions"][0]
+    submitted = choose(client, headers, attempt["attemptId"], question["questionId"], question["correctOptionIds"])
+    assert submitted.status_code == 200
+    active = client.get("/v1/attempts/active", headers=headers)
+    assert active.status_code == 200
+    assert active.json()["items"][0]["attemptId"] == attempt["attemptId"]
+    previous = client.get(f"/v1/attempts/{attempt['attemptId']}/answers/0", headers=headers)
+    assert previous.status_code == 200
+    assert previous.json()["question"]["questionId"] == question["questionId"]
+    assert client.get(f"/v1/attempts/{attempt['attemptId']}/answers/1", headers=headers).status_code == 404
+    assert client.get(
+        f"/v1/attempts/{attempt['attemptId']}/answers/0", headers=login("another-user")
+    ).status_code == 404
 
 
 def finish(client, headers, attempt_id, fixed_data, *, wrong=False, skip_last=False):
@@ -564,7 +617,7 @@ def test_migration_backfills_takeaway_sources_from_retained_records(
         with database.begin() as db:
             db.delete(db.get(Quiz, quiz_id))
 
-    config = Config(str(DATA.parents[1] / "alembic.ini"))
+    config = Config(str(DATA.parents[2] / "alembic.ini"))
     with database.kw["bind"].begin() as connection:
         config.attributes["connection"] = connection
         command.downgrade(config, "0005_summary_retry_keys")

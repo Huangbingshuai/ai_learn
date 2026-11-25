@@ -12,8 +12,9 @@ from sqlalchemy import select
 
 from app import db
 from app.worker.ai import AIError
+from tests.topic_fixtures import get_topic_version
 
-DATA = Path(__file__).resolve().parents[1] / "data" / "topics"
+DATA = Path(__file__).resolve().parent / "fixtures" / "topics"
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ class FakeAI:
 
     def generate(self, topic):
         self.calls.append("generate")
-        assert topic["topicKey"] == "seasons"
+        assert topic["topicKey"] == "live-test"
         return self.generation() if self.generation else self.quiz
 
     def review(self, topic, quiz):
@@ -59,6 +60,11 @@ class FakeAI:
 
 def queue_generation(database, settings, **overrides):
     now = db.utcnow()
+    topic = get_topic_version("seasons", "v1")
+    topic.update({
+        "topicKey": "live-test", "title": "测试主题", "originalInput": "测试主题",
+        "scope": "测试用生成主题", "version": "web-v1", "evidenceAt": now.isoformat(),
+    })
     with database.begin() as session:
         user = db.User(app_id="test-wechat", openid=uuid4().hex)
         session.add(user)
@@ -67,8 +73,9 @@ def queue_generation(database, settings, **overrides):
             **{
                 "user_id": user.id,
                 "source": "TOPIC",
-                "topic_key": "seasons",
-                "topic_version": "v1",
+                "topic_key": "live-test",
+                "topic_version": None,
+                "checkpoint": {"topic": topic},
                 "input_digest": "0" * 64,
                 "idempotency_key": uuid4().hex,
                 "status": "QUEUED",
@@ -256,7 +263,7 @@ def test_transient_failure_requeues_and_reuses_the_same_budget(
 def test_worker_fails_if_the_bound_source_version_is_missing(
     worker_module, database, settings, quiz
 ):
-    job_id = queue_generation(database, settings, topic_version="missing")
+    job_id = queue_generation(database, settings, checkpoint={}, topic_input=None)
     ai = FakeAI(quiz=quiz)
 
     assert worker_module.Worker(settings, database, ai).process_once()

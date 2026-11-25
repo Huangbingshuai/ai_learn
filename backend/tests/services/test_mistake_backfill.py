@@ -2,12 +2,11 @@ from sqlalchemy import delete, func, select, update
 
 from app.db import Attempt, MistakeAnswerEvent, MistakeItem, Record, new_id, utcnow
 from app.services.mistakes import backfill_mistakes
+from tests.topic_fixtures import create_test_quiz
 
 
 def start_quiz(client, headers):
-    response = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
-    assert response.status_code == 201, response.text
-    return response.json()["quizId"]
+    return create_test_quiz(client, headers)["quizId"]
 
 
 def start_attempt(client, headers, quiz_id, key):
@@ -70,7 +69,7 @@ def test_backfill_merges_completed_records_and_incomplete_attempts_idempotently(
     assert item.wrong_count == 2
     assert event_count == 2
     assert item.status == "MASTERED"
-    assert item.topic_key == "seasons"
+    assert item.topic_key == "test-topic"
     assert item.latest_receipt["isCorrect"] is False
 
 

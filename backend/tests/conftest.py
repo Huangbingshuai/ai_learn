@@ -19,7 +19,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def fixed_data():
-    source = BACKEND / "data" / "topics" / "fixed-seasons.json"
+    source = BACKEND / "tests" / "fixtures" / "topics" / "fixed-seasons.json"
     return json.loads(source.read_text())
 
 

@@ -6,9 +6,9 @@ import httpx
 from sqlalchemy import func, select
 
 from app.db import GenerationJob, Quiz, SavedTopic, utcnow
-from app.domain.topics import get_topic_version, load_fixed_quiz
 from app.worker.queue import Worker
 from app.worker.search import SEARCH_URL, TavilySearch
+from tests.topic_fixtures import get_topic_version, load_fixed_quiz
 
 
 def test_search_accepts_only_passages_present_in_raw_content():

@@ -20,7 +20,7 @@ from app.db import (
     utcnow,
 )
 from app.domain.questions import question_fingerprint
-from app.domain.topics import live_topic_key, match_topic
+from app.domain.topics import live_topic_key
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +149,7 @@ def _topic_key(db: Session, attempt_id: str, fallback_title: str) -> tuple[str, 
     )
     if quiz is not None:
         return quiz.topic_key, fallback_title or quiz.topic_title
-    topic = match_topic(fallback_title)
-    return (topic.topicKey if topic else live_topic_key(fallback_title)), fallback_title
+    return live_topic_key(fallback_title), fallback_title
 
 
 def _backfill_record(db: Session, record: Record) -> int:

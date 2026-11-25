@@ -26,7 +26,6 @@ def create_app(
     api.include_router(jobs.router, prefix="/v1")
     if settings.app_env == "development":
         api.include_router(local_router, prefix="/v1")
-        api.include_router(attempts.local_router, prefix="/v1")
 
     @api.get("/healthz")
     def health() -> dict[str, str]:

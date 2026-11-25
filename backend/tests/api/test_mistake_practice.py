@@ -13,14 +13,14 @@ from app.db import (
     Record,
     RecordSummary,
 )
+from tests.topic_fixtures import create_test_quiz
 
 
 def create_mistake(client, headers, fixed_data):
-    quiz = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
-    assert quiz.status_code == 201, quiz.text
+    quiz = create_test_quiz(client, headers)
     started = client.post(
         "/v1/attempts",
-        json={"quizId": quiz.json()["quizId"]},
+        json={"quizId": quiz["quizId"]},
         headers={**headers, "Idempotency-Key": "learn"},
     )
     assert started.status_code == 201, started.text
@@ -137,15 +137,13 @@ def test_practice_requires_owned_mistake_and_conflicts_on_reused_key(client, log
 
     hidden = start_practice(client, other_headers, fingerprint)
     first = start_practice(client, first_headers, fingerprint, key="same-key")
-    other = client.post(
-        "/v1/dev/quizzes/fixed", headers={**first_headers, "Idempotency-Key": "other-fixed"}
-    )
+    other = create_test_quiz(client, first_headers)
     assert hidden.status_code == 404
     assert first.status_code == 201
-    assert other.status_code == 201
+    assert other["quizId"]
     normal = client.post(
         "/v1/attempts",
-        json={"quizId": other.json()["quizId"]},
+        json={"quizId": other["quizId"]},
         headers={**first_headers, "Idempotency-Key": "same-key"},
     )
     assert normal.status_code == 409

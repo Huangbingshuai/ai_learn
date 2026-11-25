@@ -3,12 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy import func, select
 
 from app.db import MistakeAnswerEvent, MistakeItem
+from tests.topic_fixtures import create_test_quiz
 
 
 def start_quiz(client, headers):
-    response = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
-    assert response.status_code == 201, response.text
-    return response.json()["quizId"]
+    return create_test_quiz(client, headers)["quizId"]
 
 
 def start_attempt(client, headers, quiz_id, key):

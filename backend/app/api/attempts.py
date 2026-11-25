@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
@@ -23,9 +25,9 @@ from app.db import (
     utcnow,
 )
 from app.domain.questions import question_fingerprint
-from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, validate_quiz
+from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType
 from app.domain.summaries import RULES_VERSION as SUMMARY_RULES_VERSION
-from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
+from app.domain.topics import EvidenceView
 from app.quota import QuotaReached, reserve_quota
 from app.services.mistakes import record_wrong_answer
 
@@ -37,9 +39,6 @@ router = APIRouter(
         422: {"model": ErrorView},
         429: {"model": ErrorView},
     }
-)
-local_router = APIRouter(
-    responses={401: {"model": ErrorView}, 409: {"model": ErrorView}, 422: {"model": ErrorView}}
 )
 
 
@@ -61,6 +60,10 @@ class StartAttempt(BaseModel):
     quizId: UUID
 
 
+class DraftAnswer(BaseModel):
+    selectedOptionIds: list[Identifier] = Field(max_length=8)
+
+
 class AttemptView(QuizView):
     attemptId: str
     topicTitle: str
@@ -69,7 +72,12 @@ class AttemptView(QuizView):
     answeredCount: int
     totalQuestions: int
     question: QuestionView | None = None
+    draftOptionIds: list[str] = Field(default_factory=list)
     recordId: str | None = None
+
+
+class ActiveAttempts(BaseModel):
+    items: list[AttemptView]
 
 
 def project_question(question: dict, index: int, ai_generated: bool) -> QuestionView:
@@ -125,68 +133,9 @@ def _attempt_view(db: DB, attempt: Attempt, quiz: Quiz) -> AttemptView:
         answeredCount=attempt.answered_count,
         totalQuestions=len(questions),
         question=current,
+        draftOptionIds=list(attempt.draft_option_ids or []) if status == "ACTIVE" else [],
         recordId=record_id,
     )
-
-
-@local_router.post("/dev/quizzes/fixed", status_code=201)
-def fixed_quiz(
-    db: DB, user_id: CurrentUser, idempotency_key: IdempotencyKey, request: Request
-) -> QuizView:
-    with db.begin():
-        now = utcnow()
-        job_id = db.scalar(
-            insert(GenerationJob)
-            .values(
-                user_id=user_id,
-                source="FIXED",
-                topic_key="seasons",
-                topic_version="v1",
-                input_digest=digest("fixed-seasons"),
-                idempotency_key=idempotency_key,
-                status="SUCCEEDED",
-                next_run_at=now,
-                created_at=now,
-                expires_at=now + timedelta(minutes=request.app.state.settings.job_minutes),
-                model_name="fixed",
-                rules_version=RULES_VERSION,
-            )
-            .on_conflict_do_nothing(constraint="uq_generation_idempotency")
-            .returning(GenerationJob.id)
-        )
-        if job_id is None:
-            quiz = db.scalar(
-                select(Quiz)
-                .join(GenerationJob, Quiz.job_id == GenerationJob.id)
-                .where(
-                    GenerationJob.user_id == user_id,
-                    GenerationJob.source == "FIXED",
-                    GenerationJob.idempotency_key == idempotency_key,
-                )
-            )
-            if quiz is None:
-                raise expired_quiz()
-        else:
-            try:
-                topic = get_topic_version("seasons", "v1")
-                spec = validate_quiz(load_fixed_quiz(), topic)
-            except (ValueError, OSError) as error:
-                raise ApiError(503, "SOURCE_INSUFFICIENT", "固定题组的依据不可用。") from error
-            quiz = Quiz(
-                job_id=job_id,
-                user_id=user_id,
-                topic_key=topic["topicKey"],
-                topic_title=topic["title"],
-                content=spec.model_dump(mode="json"),
-                evidence=topic["evidence"],
-                ai_generated=False,
-                created_at=now,
-                expires_at=now + timedelta(hours=request.app.state.settings.quiz_hours),
-                rules_version=RULES_VERSION,
-            )
-            db.add(quiz)
-            db.flush()
-        return QuizView(quizId=quiz.id, quizExpiresAt=quiz.expires_at)
 
 
 @router.post("/attempts", status_code=201)
@@ -388,6 +337,21 @@ def start_mistake_practice(
         return _attempt_view(db, attempt, quiz)
 
 
+@router.get("/attempts/active", response_model=ActiveAttempts)
+def active_attempts(db: DB, user_id: CurrentUser) -> ActiveAttempts:
+    rows = db.execute(
+        select(Attempt, Quiz)
+        .join(Quiz, Quiz.id == Attempt.quiz_id)
+        .where(
+            Attempt.user_id == user_id,
+            Attempt.status == "ACTIVE",
+            Quiz.expires_at > utcnow(),
+        )
+        .order_by(Attempt.created_at.desc())
+    ).all()
+    return ActiveAttempts(items=[_attempt_view(db, attempt, quiz) for attempt, quiz in rows])
+
+
 @router.get("/attempts/{attempt_id}")
 def read_attempt(attempt_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
     attempt = db.scalar(
@@ -396,6 +360,32 @@ def read_attempt(attempt_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
     if attempt is None:
         raise not_found()
     return _attempt_view(db, attempt, _owned_quiz(db, attempt.quiz_id, user_id))
+
+
+@router.put("/attempts/{attempt_id}/draft")
+def save_attempt_draft(
+    attempt_id: UUID, body: DraftAnswer, db: DB, user_id: CurrentUser
+) -> AttemptView:
+    with db.begin():
+        attempt = db.scalar(
+            select(Attempt)
+            .where(Attempt.id == str(attempt_id), Attempt.user_id == user_id)
+            .with_for_update()
+        )
+        if attempt is None:
+            raise not_found()
+        if attempt.status != "ACTIVE":
+            raise ApiError(409, "ATTEMPT_CLOSED", "本次练习已结束。")
+        quiz = _owned_quiz(db, attempt.quiz_id, user_id)
+        if quiz.expires_at <= utcnow():
+            raise expired_quiz()
+        question = quiz.content["questions"][attempt.answered_count]
+        valid_ids = {option["optionId"] for option in question["options"]}
+        selected = list(dict.fromkeys(body.selectedOptionIds))
+        if not set(selected) <= valid_ids or (question["type"] != "multi" and len(selected) > 1):
+            raise ApiError(422, "INVALID_SELECTION", "请选择符合当前题型的选项。")
+        attempt.draft_option_ids = selected
+        return _attempt_view(db, attempt, quiz)
 
 
 @router.get("/quizzes/{quiz_id}/latest-attempt")
@@ -428,6 +418,26 @@ class AnswerReceipt(BaseModel):
     coinDelta: int = 0
     coinBalance: int = 0
     recordId: str | None = None
+
+
+@router.get("/attempts/{attempt_id}/answers/{question_index}")
+def read_attempt_answer(
+    attempt_id: UUID, question_index: int, db: DB, user_id: CurrentUser
+) -> AnswerReceipt:
+    attempt = db.scalar(
+        select(Attempt).where(Attempt.id == str(attempt_id), Attempt.user_id == user_id)
+    )
+    if attempt is None:
+        raise not_found()
+    answer = db.scalar(
+        select(AttemptAnswer).where(
+            AttemptAnswer.attempt_id == attempt.id,
+            AttemptAnswer.question_index == question_index,
+        )
+    )
+    if answer is None:
+        raise not_found()
+    return AnswerReceipt.model_validate(answer.receipt)
 
 
 def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tuple[int, int]:
@@ -538,6 +548,7 @@ def submit_answer(
         evidence = {item["evidenceId"]: item for item in quiz.evidence}
         attempt.answered_count += 1
         attempt.correct_count += int(chosen == correct)
+        attempt.draft_option_ids = []
         receipt = AnswerReceipt(
             question=project_question(question, index, quiz.ai_generated),
             selectedOptionIds=[item for item in ordered if item in chosen],

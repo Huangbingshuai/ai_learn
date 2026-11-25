@@ -108,14 +108,14 @@ def run_topic(client, topic, timeout, *, expect_saved=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8000")
-    parser.add_argument("--topic", action="append")
+    parser.add_argument("--topic", action="append", required=True)
     parser.add_argument("--timeout", type=float, default=720)
     parser.add_argument("--expect-saved-topic", action="store_true")
     args = parser.parse_args()
     with httpx.Client(base_url=args.api, timeout=15, trust_env=False) as client:
         session = request(client, "POST", "/v1/dev/auth", json={"deviceId": f"smoke-{uuid4().hex}"})
         client.headers["Authorization"] = f"Bearer {session['accessToken']}"
-        for topic in args.topic or ["四季成因", "月相变化"]:
+        for topic in args.topic:
             run_topic(client, topic, args.timeout, expect_saved=args.expect_saved_topic)
 
 

@@ -4,19 +4,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.api.attempts import key_conflict
 from app.api.dependencies import DB, CurrentUser, IdempotencyKey, digest
 from app.api.errors import ApiError, ErrorView, not_found
-from app.db import GenerationJob, Quiz, SavedTopic, utcnow
+from app.db import GenerationJob, Quiz, SavedTopic, User, utcnow
 from app.domain.quizzes import RULES_VERSION
 from app.domain.topics import (
     SAVED_SOURCE_MAX_AGE,
-    live_topic_key,
-    load_topics,
-    match_topic,
     normalize,
 )
 from app.quota import reserve_quota
@@ -66,10 +63,7 @@ def _job_statement(user_id: str):
 
 
 def _topic_title(key: str | None) -> str:
-    try:
-        return next((topic.title for topic in load_topics() if topic.topicKey == key), "学习主题")
-    except ValueError:
-        return "学习主题"
+    return "学习主题"
 
 
 def _job_view(job: GenerationJob, quiz: Quiz | None, request: Request) -> GenerationView:
@@ -125,6 +119,8 @@ def create_job(
     settings = request.app.state.settings
 
     with db.begin():
+        # Serialize generation creation per account; a second device sees the first job.
+        db.scalar(select(User).where(User.id == user_id).with_for_update())
         prior = db.execute(same_job).one_or_none()
         if prior is not None:
             if prior[0].input_digest != input_digest:
@@ -132,25 +128,29 @@ def create_job(
             return _job_view(*prior, request)
 
         now = utcnow()
-        try:
-            topic = (
-                match_topic(body.topic)
-                if body.topic
-                else next((item for item in load_topics() if item.topicKey == body.topicKey), None)
+        in_progress = db.scalar(
+            select(GenerationJob)
+            .where(
+                GenerationJob.user_id == user_id,
+                GenerationJob.source == "TOPIC",
+                GenerationJob.status.in_(("QUEUED", "RUNNING")),
+                GenerationJob.expires_at > now,
             )
-        except ValueError:
-            topic = None
-        saved = None
-        if topic is None:
-            key = body.topicKey or live_topic_key(body.topic)
-            saved = db.get(SavedTopic, (user_id, key))
-            if body.topicKey and saved is None:
-                raise not_found()
+            .order_by(GenerationJob.created_at.desc())
+            .limit(1)
+        )
+        if in_progress is not None:
+            raise ApiError(409, "GENERATION_IN_PROGRESS", "已有一组题目正在生成。")
 
-        topic_key = topic.topicKey if topic else saved.topic_key if saved else None
-        topic_title = topic.title if topic else saved.title if saved else None
-        topic_input = None if topic else body.topic
-        topic_version = topic.version if topic else None
+        saved = None
+        if body.topicKey:
+            saved = db.get(SavedTopic, (user_id, body.topicKey))
+            if saved is None:
+                raise not_found()
+        topic_key = saved.topic_key if saved else None
+        topic_title = saved.title if saved else None
+        topic_input = body.topic
+        topic_version = None
         checkpoint = None
         if saved:
             if now - saved.evidence_at <= SAVED_SOURCE_MAX_AGE:
@@ -205,6 +205,25 @@ def create_job(
             db, f"generation:user:{user_id}", start, end, settings.user_daily_generation_limit
         )
         return _job_view(db.get(GenerationJob, job_id), None, request)
+
+
+@router.get("/generation-jobs/current")
+def current_job(db: DB, user_id: CurrentUser, request: Request) -> GenerationView | None:
+    now = utcnow()
+    result = db.execute(
+        _job_statement(user_id)
+        .where(or_(
+            and_(GenerationJob.status.in_(("QUEUED", "RUNNING")), GenerationJob.expires_at > now),
+            and_(GenerationJob.status == "SUCCEEDED", Quiz.expires_at > now),
+            and_(GenerationJob.status == "FAILED", GenerationJob.created_at > now - timedelta(hours=24)),
+        ))
+        .order_by(
+            (GenerationJob.status.in_(("QUEUED", "RUNNING"))).desc(),
+            GenerationJob.created_at.desc(),
+        )
+        .limit(1)
+    ).one_or_none()
+    return _job_view(*result, request) if result else None
 
 
 @router.get("/generation-jobs/{job_id}")

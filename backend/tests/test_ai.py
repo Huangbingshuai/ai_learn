@@ -7,8 +7,8 @@ import pytest
 
 from app.config import Settings
 from app.domain.quizzes import validate_quiz
-from app.domain.topics import get_topic_version, load_fixed_quiz
 from app.worker.queue import _validation_issues
+from tests.topic_fixtures import get_topic_version, load_fixed_quiz
 
 
 @pytest.fixture

@@ -234,6 +234,7 @@ class Attempt(Base):
     status: Mapped[str] = mapped_column(String(12), default="ACTIVE")
     answered_count: Mapped[int] = mapped_column(Integer, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
+    draft_option_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     purpose: Mapped[str] = mapped_column(String(12), default="LEARNING", server_default="LEARNING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     rules_version: Mapped[str] = mapped_column(String(32))
