@@ -12,6 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     create_engine,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -199,3 +200,8 @@ class RecordSummary(Base):
     rules_version: Mapped[str] = mapped_column(String(32))
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     retry_key: Mapped[str | None] = mapped_column(String(128))
+    retry_keys: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+
+    @property
+    def pending_manual_retry(self) -> bool:
+        return self.retry_key is not None and self.retry_count == 0

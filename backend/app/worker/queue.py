@@ -144,7 +144,12 @@ class Worker:
             )
             if row is None:
                 return None
-            if row.status == "RUNNING" and row.call_count < self._call_limit(row):
+            unpaid_retry = isinstance(row, RecordSummary) and row.pending_manual_retry
+            if (
+                row.status == "RUNNING"
+                and not unpaid_retry
+                and row.call_count < self._call_limit(row)
+            ):
                 row.call_count += 1
             row.status = "RUNNING"
             row.lease_count += 1
@@ -158,7 +163,8 @@ class Worker:
     def _call_limit(self, row: Task) -> int:
         if isinstance(row, GenerationJob):
             return self.settings.max_generation_calls
-        return self.settings.max_summary_calls - int(row.retry_count == 0)
+        keep_manual_slot = row.retry_count == 0 and not row.pending_manual_retry
+        return self.settings.max_summary_calls - int(keep_manual_slot)
 
     def _owned(self, session: Session, claim: _Claim, *, lock: bool = False) -> Task:
         row = session.get(claim.kind, claim.row_id, with_for_update=lock)
@@ -205,6 +211,8 @@ class Worker:
                     raise AIError(
                         "RATE_LIMITED", "今天的总结用量已达上限，基础结果仍可查看。", True
                     ) from None
+                if row.pending_manual_retry:
+                    row.retry_count += 1
             row.model_name = self.settings.deepseek_model
             row.call_count += 1
             row.lease_until = min(utcnow() + self.lease_duration, row.expires_at)

@@ -163,7 +163,7 @@ def retry_summary(
             raise not_found()
 
         current = _summary_view(summary, request)
-        if summary.retry_key == idempotency_key or current.status != "FAILED":
+        if idempotency_key in summary.retry_keys or current.status != "FAILED":
             return current
         settings = request.app.state.settings
         if (
@@ -179,7 +179,7 @@ def retry_summary(
             raise QuotaReached
         summary.status = "QUEUED"
         summary.retry_key = idempotency_key
-        summary.retry_count += 1
+        summary.retry_keys = [*summary.retry_keys, idempotency_key]
         summary.model_name = settings.deepseek_model
         summary.rules_version = RULES_VERSION
         summary.next_run_at = now

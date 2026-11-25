@@ -255,9 +255,13 @@ def test_history_keyset_handles_identical_completion_times(client, play, fixed_d
 
 
 def test_summary_retry_is_private_and_can_only_be_accepted_once(
-    client, play, fixed_data, database, login
+    client, play, fixed_data, database, login, settings
 ):
+    from types import SimpleNamespace
+
     from app.db import RecordSummary
+    from app.worker.ai import AIError
+    from app.worker.queue import Worker
 
     headers, _, attempt = play
     record_id = finish(client, headers, attempt["attemptId"], fixed_data, wrong=True)[-1][
@@ -285,13 +289,19 @@ def test_summary_retry_is_private_and_can_only_be_accepted_once(
         results = list(pool.map(lambda _: client.post(path, headers=key), range(2)))
     assert [result.status_code for result in results] == [202, 202]
     assert [result.json()["status"] for result in results] == ["QUEUED", "QUEUED"]
-    with database.begin() as db:
+    with database() as db:
+        summary = db.get(RecordSummary, record_id)
+        assert summary.retry_count == 0
+        assert summary.call_count == 2
+
+    def reject(_snapshot):
+        raise AIError("UNSUITABLE_CONTENT", "模型拒绝处理。", retryable=False)
+
+    assert Worker(settings, database, SimpleNamespace(summarize=reject)).process_once()
+    with database() as db:
         summary = db.get(RecordSummary, record_id)
         assert summary.retry_count == 1
-        assert summary.call_count == 2
-        summary.status = "FAILED"
-        summary.error_code = "PROVIDER_TIMEOUT"
-        summary.error_retryable = False
+        assert summary.call_count == 3
     assert client.post(path, headers=key).json()["status"] == "FAILED"
     assert client.post(path, headers={**headers, "Idempotency-Key": "new-retry"}).status_code == 409
 
@@ -347,3 +357,80 @@ def test_summary_quota_does_not_consume_manual_retry_slot(
         summary = db.get(RecordSummary, record_id)
         assert summary.retry_count == 0
         assert summary.retry_key is None
+
+
+def test_manual_retry_survives_quota_filled_after_enqueue(
+    client, play, fixed_data, database, settings
+):
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.db import RateLimit, Record, RecordSummary, utcnow
+    from app.main import create_app
+    from app.quota import reserve_summary_quota
+    from app.worker.queue import Worker
+
+    headers, _, attempt = play
+    record_id = finish(client, headers, attempt["attemptId"], fixed_data)[-1]["recordId"]
+    constrained = settings.model_copy(update={"global_daily_summary_limit": 1})
+    with database.begin() as db:
+        user_id = db.get(Record, record_id).user_id
+        task = db.get(RecordSummary, record_id)
+        task.status = "FAILED"
+        task.error_code = "PROVIDER_TIMEOUT"
+        task.error_retryable = True
+        task.call_count = constrained.max_summary_calls - 1
+
+    called = []
+    item = {"text": "复习题目中的概念。", "questionIds": ["seasons-01"], "evidenceIds": []}
+
+    def summarize(_snapshot):
+        called.append(True)
+        return {"knowledgeReview": [item], "mistakeNotes": [], "reviewSuggestions": [item]}
+
+    worker = Worker(constrained, database, SimpleNamespace(summarize=summarize))
+    path = f"/v1/records/{record_id}/ai-summary/retry"
+    with TestClient(create_app(constrained, database)) as capped:
+        assert capped.post(path, headers={**headers, "Idempotency-Key": "first"}).status_code == 202
+        with database.begin() as db:
+            reserve_summary_quota(db, user_id, utcnow(), constrained)
+        assert worker.process_once()
+        with database.begin() as db:
+            task = db.get(RecordSummary, record_id)
+            assert task.error_code == "RATE_LIMITED"
+            assert task.retry_count == 0
+            assert task.error_retryable
+            assert task.call_count == constrained.max_summary_calls - 1
+            assert not called
+            db.execute(delete(RateLimit))
+        assert (
+            capped.post(path, headers={**headers, "Idempotency-Key": "first"}).json()["status"]
+            == "FAILED"
+        )
+        assert capped.post(path, headers={**headers, "Idempotency-Key": "next"}).status_code == 202
+        with database.begin() as db:
+            reserve_summary_quota(db, user_id, utcnow(), constrained)
+        assert worker.process_once()
+        with database.begin() as db:
+            db.execute(delete(RateLimit))
+        # Replaying an older accepted key cannot re-enqueue an unpaid retry.
+        assert (
+            capped.post(path, headers={**headers, "Idempotency-Key": "first"}).json()["status"]
+            == "FAILED"
+        )
+        assert capped.post(path, headers={**headers, "Idempotency-Key": "third"}).status_code == 202
+        with database.begin() as db:
+            task = db.get(RecordSummary, record_id)
+            task.status = "RUNNING"
+            task.lease_until = utcnow() - timedelta(seconds=1)
+        assert worker.process_once()
+    with database() as db:
+        task = db.get(RecordSummary, record_id)
+        assert (task.status, task.retry_count, task.call_count) == (
+            "SUCCEEDED",
+            1,
+            constrained.max_summary_calls,
+        )
+    assert called == [True]
