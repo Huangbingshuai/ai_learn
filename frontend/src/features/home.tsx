@@ -76,6 +76,17 @@ export function HomeScreen({
   }
 
   return <>
+    <View className='comic-cover'>
+      <Image className='cover-art' src={cover} mode='widthFix' aria-label='翻开的书里跳出一颗地球，戴眼镜的学生在旁边发问' />
+      <View className='cover-title'>
+        <Text>今天想弄懂</Text>
+        <Text className='cover-emphasis'>什么？</Text>
+      </View>
+      <View className='cover-dialogue'>
+        <Text>地球忘带</Text>
+        <Text>校服啦？</Text>
+      </View>
+    </View>
     <Text className='home-caption'>一组 20 道题，每题都有讲解</Text>
     <View className='topic-form'>
       <View className='topic-field'>
@@ -127,17 +138,6 @@ export function HomeScreen({
         <Text className='continue-arrow' aria-hidden>›</Text>
       </Button>}
     </View>}
-    <View className='comic-cover'>
-      <Image className='cover-art' src={cover} mode='widthFix' aria-label='翻开的书里跳出一颗地球，戴眼镜的学生在旁边发问' />
-      <View className='cover-title'>
-        <Text>今天想弄懂</Text>
-        <Text className='cover-emphasis'>什么？</Text>
-      </View>
-      <View className='cover-dialogue'>
-        <Text>地球忘带</Text>
-        <Text>校服啦？</Text>
-      </View>
-    </View>
     <View className='topic-picker'>
       <Text className='h2'>已保存主题</Text>
       {topics && <View className='topic-options'>
