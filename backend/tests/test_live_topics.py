@@ -95,7 +95,7 @@ def test_live_job_tracks_actual_phases_and_publishes_only_verified_set(
     assert Worker(settings, database, Model(), Search()).process_once()
     result = client.get(path, headers=headers).json()
     assert result["status"] == "SUCCEEDED" and result["quizId"]
-    assert result["topicTitle"] == "地轴倾斜"
+    assert result["topicTitle"] == "入门了解地轴倾斜"
     assert phases == [
         "RESOLVING_TOPIC",
         "READING_SOURCES",
@@ -109,7 +109,7 @@ def test_live_job_tracks_actual_phases_and_publishes_only_verified_set(
         assert job.checkpoint is None and job.topic_input is None
 
     topic = client.get("/v1/topics", headers=headers).json()["items"][0]
-    assert topic["title"] == "地轴倾斜" and topic["art"] == "topic" and topic["canDelete"]
+    assert topic["title"] == "入门了解地轴倾斜" and topic["art"] == "topic" and topic["canDelete"]
     with database.begin() as db:
         db.get(Quiz, result["quizId"]).expires_at = utcnow() - timedelta(days=2)
     Worker(settings, database, Model()).cleanup()

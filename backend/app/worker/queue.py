@@ -418,7 +418,7 @@ class Worker:
         topic = {
             "topicKey": saved_key
             or (example.topicKey if example else live_topic_key(intent["title"])),
-            "title": intent["title"],
+            "title": topic_input,
             "scope": intent["scope"],
             "version": "web-v1",
             "evidence": evidence,
