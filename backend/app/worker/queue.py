@@ -27,7 +27,13 @@ from app.db import (
 )
 from app.domain.quizzes import validate_quiz
 from app.domain.summaries import validate_summary
-from app.domain.topics import get_topic_version, live_topic_key, normalize
+from app.domain.topics import (
+    CURRENT_VERSIONS,
+    get_topic_version,
+    live_topic_key,
+    match_topic,
+    normalize,
+)
 from app.quota import QuotaReached, reserve_summary_quota
 from app.worker.ai import AIError, DeepSeekAI
 from app.worker.search import MIN_PASSAGES, TavilySearch
@@ -300,7 +306,7 @@ class Worker:
             )
             row.topic_key = topic["topicKey"]
             row.topic_version = topic["version"]
-            if "scope" in topic:
+            if "scope" in topic and topic["topicKey"] not in CURRENT_VERSIONS:
                 self._save_topic(session, row.user_id, topic, now)
             _succeed(row)
 
@@ -390,8 +396,13 @@ class Worker:
         evidence = [item for item in passages if item["evidenceId"] in selected]
         if len(evidence) < MIN_PASSAGES or len({item["sourceUrl"] for item in evidence}) < 2:
             raise insufficient
+        try:
+            example = match_topic(intent["title"]) if not saved_key else None
+        except ValueError:
+            example = None
         topic = {
-            "topicKey": saved_key or live_topic_key(intent["title"]),
+            "topicKey": saved_key
+            or (example.topicKey if example else live_topic_key(intent["title"])),
             "title": intent["title"],
             "scope": intent["scope"],
             "version": "web-v1",
