@@ -66,9 +66,11 @@ const request = createRequestClient({
 })
 
 export const api = {
-  topics: () => request<TopicList>({ path: '/v1/topics' }),
-  generate: (topic: string, idempotencyKey: string) => request<GenerationJob>({
-    path: '/v1/generation-jobs', method: 'POST', data: { topic } satisfies BodyFor<'/v1/generation-jobs', 'post'>, idempotencyKey,
+  topics: (cursor?: string) => request<TopicList>({
+    path: '/v1/topics' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
+  }),
+  generate: (data: TopicInput, idempotencyKey: string) => request<GenerationJob>({
+    path: '/v1/generation-jobs', method: 'POST', data: data satisfies BodyFor<'/v1/generation-jobs', 'post'>, idempotencyKey,
   }),
   job: (id: string) => request<GenerationJob>({ path: `/v1/generation-jobs/${encodeURIComponent(id)}` }),
   fixedQuiz: __QINGZHI_DEV_FIXED_QUIZ__ ? (idempotencyKey: string) => request<QuizGroup>({
@@ -92,6 +94,33 @@ export const api = {
 }
 
 export type RestartGroup = QuizGroup & { topicTitle: string }
+export type TopicInput = { topic: string } | { topicKey: string }
+export type PendingGeneration = {
+  kind: 'generate'
+  input: TopicInput
+  title: string
+  key: string
+  requestedAt: number
+  jobId?: string
+}
+
+const PENDING_KEY = `${SESSION_KEY}.generation.v1`
+const PENDING_AGE = 48 * 60 * 60 * 1000
+
+export function readPendingGenerations(): PendingGeneration[] {
+  const entries = readSaved<PendingGeneration[]>(PENDING_KEY)
+  if (!Array.isArray(entries)) return []
+  const cutoff = Date.now() - PENDING_AGE
+  return entries.filter((entry) => entry?.kind === 'generate' && typeof entry.key === 'string'
+    && typeof entry.requestedAt === 'number' && entry.requestedAt > cutoff
+    && typeof entry.title === 'string' && entry.input && typeof entry.input === 'object'
+    && ('topic' in entry.input || 'topicKey' in entry.input))
+}
+
+export function savePendingGenerations(entries: PendingGeneration[]) {
+  save(PENDING_KEY, entries.length ? entries : undefined)
+}
+
 const RESTART_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.restart.dev.v1' : 'qingzhi.restart.wechat.v1'
 
 export function readRestartGroup(): RestartGroup | undefined {

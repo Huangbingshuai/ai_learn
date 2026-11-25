@@ -1,7 +1,10 @@
 import { ScrollView, Text, View } from '@tarojs/components'
 import { useDidHide, useDidShow } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { readRestartGroup, saveRestartGroup, type RestartGroup } from '../../api/client'
+import {
+  readPendingGenerations, readRestartGroup, savePendingGenerations, saveRestartGroup,
+  type PendingGeneration, type RestartGroup, type TopicInput,
+} from '../../api/client'
 import { RequestError } from '../../api/request'
 import type { AnswerReceipt, Attempt, Evidence, LearningRecord } from '../../api/types'
 import { Action, EvidenceSheet, Header, Sheet, Tabs, getWindowLayout } from '../../components/comic'
@@ -41,6 +44,8 @@ export default function Index() {
   const [input, setInput] = useState('')
   const [topicError, setTopicError] = useState('')
   const [restart, setRestart] = useState(readRestartGroup)
+  const [pending, setPending] = useState(readPendingGenerations)
+  const pendingRef = useRef(pending)
   const [visible, setVisible] = useState(true)
   const [evidence, setEvidence] = useState<Evidence[]>()
   const [confirmExit, setConfirmExit] = useState(false)
@@ -78,10 +83,29 @@ export default function Index() {
     setScreen({ name: 'quiz', attempt: { ...attempt, question: attempt.question } })
   }
 
-  function launchGeneration(topic: string) {
+  function updatePending(change: (entries: PendingGeneration[]) => PendingGeneration[]) {
+    const next = change(pendingRef.current)
+    pendingRef.current = next
+    setPending(next)
+    savePendingGenerations(next)
+  }
+
+  function forgetPending(key: string) {
+    updatePending((entries) => entries.filter((entry) => entry.key !== key))
+  }
+
+  function openGeneration(intent: PendingGeneration) {
+    setScreen({ name: 'generation', intent })
+  }
+
+  function launchGeneration(topic: string, topicInput: TopicInput = { topic }) {
     setInput(topic)
     setTopicError('')
-    setScreen({ name: 'generation', intent: { kind: 'generate', topic, key: makeKey() } })
+    const intent: PendingGeneration = {
+      kind: 'generate', input: topicInput, title: topic, key: makeKey(), requestedAt: Date.now(),
+    }
+    updatePending((entries) => [intent, ...entries].slice(0, 20))
+    openGeneration(intent)
   }
 
   function launchFixed() {
@@ -118,17 +142,37 @@ export default function Index() {
   function renderScreen() {
     switch (screen.name) {
       case 'home':
-        return <HomeScreen input={input} error={topicError} restart={restart}
+        return <HomeScreen input={input} error={topicError} restart={restart} pending={pending}
           onEdit={(next) => { setInput(next); setTopicError('') }} onError={setTopicError}
-          onGenerate={launchGeneration} onFixedQuiz={launchFixed} onRestart={restartQuiz} />
-      case 'generation':
-        return <GenerationScreen intent={screen.intent} visible={visible} onOpen={openAttempt} onCancel={openHome}
-          onInvalidTopic={(error) => { setTopicError(error); openHome() }}
+          onGenerate={launchGeneration} onTopic={(topic) => launchGeneration(topic.title, { topicKey: topic.topicKey })}
+          onPending={openGeneration} onFixedQuiz={launchFixed} onRestart={restartQuiz} />
+      case 'generation': {
+        const { intent } = screen
+        return <GenerationScreen intent={intent} visible={visible}
+          onOpen={(attempt) => {
+            openAttempt(attempt)
+            if (intent.kind === 'generate') forgetPending(intent.key)
+          }}
+          onCancel={(finished) => {
+            if (finished && intent.kind === 'generate') forgetPending(intent.key)
+            openHome()
+          }}
+          onInvalidTopic={(error) => {
+            if (intent.kind === 'generate') forgetPending(intent.key)
+            setTopicError(error)
+            openHome()
+          }}
+          onJobId={(jobId) => updatePending((entries) =>
+            entries.map((entry) => entry.key === intent.key ? { ...entry, jobId } : entry))}
           onStartAgain={() => {
-            const { intent } = screen
             if (intent.kind === 'fixed') launchFixed()
-            else launchGeneration(intent.kind === 'restart' ? intent.group.topicTitle : intent.topic)
+            else if (intent.kind === 'restart') launchGeneration(intent.group.topicTitle)
+            else {
+              forgetPending(intent.key)
+              launchGeneration(intent.title, intent.input)
+            }
           }} />
+      }
       case 'quiz':
         return <QuizScreen attempt={screen.attempt} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onAnswer={(receipt) => {
           if (receipt.recordId) recordRestartGroup()

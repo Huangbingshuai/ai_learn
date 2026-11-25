@@ -315,7 +315,9 @@ export interface components {
         /** GenerateQuiz */
         GenerateQuiz: {
             /** Topic */
-            topic: string;
+            topic?: string | null;
+            /** Topickey */
+            topicKey?: string | null;
         };
         /** GenerationView */
         GenerationView: {
@@ -329,7 +331,12 @@ export interface components {
             /** Topictitle */
             topicTitle: string;
             /** Phase */
-            phase?: ("READING_SOURCES" | "GENERATING") | null;
+            phase?: ("RESOLVING_TOPIC" | "READING_SOURCES" | "GENERATING" | "VERIFYING") | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
             /** Quizid */
             quizId?: string | null;
             /** Quizexpiresat */
@@ -479,6 +486,8 @@ export interface components {
         TopicList: {
             /** Items */
             items: components["schemas"]["TopicView"][];
+            /** Nextcursor */
+            nextCursor?: string | null;
         };
         /** TopicView */
         TopicView: {
@@ -490,7 +499,7 @@ export interface components {
              * Art
              * @enum {string}
              */
-            art: "earth" | "moon";
+            art: "earth" | "moon" | "topic";
         };
         /** WechatLogin */
         WechatLogin: {
@@ -919,7 +928,10 @@ export interface operations {
     };
     list_topics_v1_topics_get: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -944,8 +956,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Service Unavailable */
-            503: {
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

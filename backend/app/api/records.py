@@ -183,7 +183,7 @@ def retry_summary(
         summary.status = "QUEUED"
         summary.retry_key = idempotency_key
         summary.retry_keys = [*summary.retry_keys, idempotency_key]
-        summary.model_name = settings.deepseek_model
+        summary.model_name = settings.ai_model
         summary.rules_version = RULES_VERSION
         summary.next_run_at = now
         summary.expires_at = now + timedelta(minutes=settings.job_minutes)

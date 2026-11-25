@@ -74,7 +74,7 @@ def queue_generation(database, settings, **overrides):
                 "next_run_at": now,
                 "created_at": now,
                 "expires_at": now + timedelta(minutes=settings.job_minutes),
-                "model_name": settings.deepseek_model,
+                "model_name": settings.ai_model,
                 "rules_version": "quiz-v1",
                 **overrides,
             }
@@ -282,7 +282,7 @@ def queue_summary(database, settings, quiz, *, retry_count=0, call_count=0):
                 next_run_at=now,
                 created_at=now,
                 expires_at=now + timedelta(minutes=settings.job_minutes),
-                model_name=settings.deepseek_model,
+                model_name=settings.ai_model,
                 rules_version="summary-v1",
                 call_count=call_count,
                 retry_count=retry_count,

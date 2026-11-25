@@ -2,6 +2,7 @@ import json
 import re
 import unicodedata
 from datetime import UTC, date, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -11,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "topics"
 CURRENT_VERSIONS = {"seasons": "v1", "moon": "v1"}
 SOURCE_MAX_AGE = timedelta(days=365)
+SAVED_SOURCE_MAX_AGE = timedelta(days=30)
 
 
 def normalize(text: str) -> str:
@@ -18,6 +20,10 @@ def normalize(text: str) -> str:
     return "".join(
         ch for ch in folded if not ch.isspace() and not unicodedata.category(ch).startswith("P")
     )
+
+
+def live_topic_key(title: str) -> str:
+    return "live-" + sha256(normalize(title).encode()).hexdigest()[:59]
 
 
 class EvidenceView(BaseModel):
@@ -45,7 +51,7 @@ class Evidence(EvidenceView):
 class TopicView(BaseModel):
     topicKey: str
     title: str
-    art: Literal["earth", "moon"]
+    art: Literal["earth", "moon", "topic"]
 
 
 class Topic(TopicView):

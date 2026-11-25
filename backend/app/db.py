@@ -79,8 +79,11 @@ class GenerationJob(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     source: Mapped[str] = mapped_column(String(10))
-    topic_key: Mapped[str] = mapped_column(String(64))
-    topic_version: Mapped[str] = mapped_column(String(32))
+    topic_key: Mapped[str | None] = mapped_column(String(64))
+    topic_version: Mapped[str | None] = mapped_column(String(32))
+    topic_input: Mapped[str | None] = mapped_column(String(80))
+    topic_title: Mapped[str | None] = mapped_column(String(100))
+    search_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     input_digest: Mapped[str] = mapped_column(String(64))
     idempotency_key: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(12))
@@ -117,6 +120,21 @@ class Quiz(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     rules_version: Mapped[str] = mapped_column(String(32))
+
+
+class SavedTopic(Base):
+    __tablename__ = "saved_topics"
+    __table_args__ = (Index("ix_saved_topics_recent", "user_id", "updated_at", "topic_key"),)
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    topic_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(100))
+    scope: Mapped[str] = mapped_column(String(240))
+    evidence: Mapped[list] = mapped_column(JSONB)
+    evidence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Attempt(Base):

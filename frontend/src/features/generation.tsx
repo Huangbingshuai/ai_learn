@@ -1,13 +1,13 @@
 import { Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
-import { api, type RestartGroup } from '../api/client'
+import { api, type PendingGeneration, type RestartGroup } from '../api/client'
 import { attemptNeedsRegeneration, messageForError, RequestError } from '../api/request'
 import type { Attempt, GenerationJob, QuizGroup } from '../api/types'
 import { Action, Tape } from '../components/comic'
-import { FIRST_POLL_DELAY, generationStep, makeKey, nextPollDelay } from './flow'
+import { FIRST_POLL_DELAY, formatElapsed, generationPhases, nextPollDelay } from './flow'
 
 export type GenerationIntent =
-  | { kind: 'generate'; topic: string; key: string }
+  | PendingGeneration
   | { kind: 'fixed'; key: string }
   | { kind: 'restart'; group: RestartGroup; key: string }
 
@@ -25,7 +25,13 @@ function jobFailure(job: GenerationJob): Failure {
     return { title: '这组练习已到期', description: issue.message, retry, requestId: issue.requestId }
   }
   if (issue?.code === 'SOURCE_INSUFFICIENT') {
-    return { title: '这个主题的依据不足', description: '现有资料还支撑不了一组完整练习。请选择另一个主题。', retry, requestId: issue.requestId }
+    return { title: '这个主题的依据不足', description: '找到的资料还支撑不了 20 道有依据的题。可以缩小范围或换个主题。', retry, requestId: issue.requestId }
+  }
+  if (issue?.code === 'TOPIC_NEEDS_CLARIFICATION') {
+    return { title: '想了解哪一部分？', description: issue.message, retry, requestId: issue.requestId }
+  }
+  if (issue?.code === 'SEARCH_UNAVAILABLE') {
+    return { title: '资料检索暂时不可用', description: issue.message, retry, requestId: issue.requestId }
   }
   if (issue?.code === 'GENERATION_QUALITY_FAILED') {
     return { title: '这组题没有通过核验', description: '这组题暂时无法用于练习。你可以重新生成，或换个主题。', retry, requestId: issue.requestId }
@@ -38,23 +44,32 @@ function jobFailure(job: GenerationJob): Failure {
   }
 }
 
-export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidTopic, onStartAgain }: {
+export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidTopic, onStartAgain, onJobId }: {
   intent: GenerationIntent
   visible: boolean
-  onCancel: () => void
+  onCancel: (finished: boolean) => void
   onOpen: (attempt: Attempt) => void
   onInvalidTopic: (message: string) => void
   onStartAgain: () => void
+  onJobId: (id: string) => void
 }) {
   const [failure, setFailure] = useState<Failure>()
-  const [phase, setPhase] = useState<GenerationJob['phase']>()
-  const [title, setTitle] = useState(intent.kind === 'generate' ? intent.topic : intent.kind === 'restart' ? intent.group.topicTitle : '固定题组')
+  const [status, setStatus] = useState<GenerationJob>()
+  const [now, setNow] = useState(Date.now)
+  const [connecting, setConnecting] = useState(false)
   const [retryTrigger, setRetryTrigger] = useState(0)
   const job = useRef<GenerationJob>()
+  const jobId = useRef(intent.kind === 'generate' ? intent.jobId : undefined)
   const group = useRef<QuizGroup>()
-  const [attemptKey] = useState(makeKey)
-  const callbacks = useRef({ onOpen, onInvalidTopic })
-  callbacks.current = { onOpen, onInvalidTopic }
+  const attemptKey = `${intent.key}-attempt`
+  const callbacks = useRef({ onOpen, onInvalidTopic, onJobId })
+  callbacks.current = { onOpen, onInvalidTopic, onJobId }
+
+  useEffect(() => {
+    if (!visible || failure || intent.kind !== 'generate') return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [failure, intent.kind, visible])
 
   useEffect(() => {
     if (!visible || failure) return
@@ -73,14 +88,19 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
           }
           else {
             let result = job.current
-            if (!result) result = await api.generate(intent.topic, intent.key)
-            else if (result.status === 'QUEUED' || result.status === 'RUNNING') {
-              result = await api.job(result.jobId)
+            if (!result || result.status === 'QUEUED' || result.status === 'RUNNING') {
+              result = jobId.current
+                ? await api.job(jobId.current)
+                : await api.generate(intent.input, intent.key)
             }
             if (!active) return
+            if (!jobId.current) {
+              jobId.current = result.jobId
+              callbacks.current.onJobId(result.jobId)
+            }
             job.current = result
-            setTitle(result.topicTitle)
-            setPhase(result.phase)
+            setStatus(result)
+            setConnecting(false)
             if (result.status === 'FAILED') {
               setFailure(jobFailure(result))
               return
@@ -102,7 +122,12 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
       } catch (problem) {
         if (!active) return
         const requestError = problem instanceof RequestError ? problem : undefined
-        if (requestError?.code === 'TOPIC_UNSUPPORTED' || requestError?.code === 'INVALID_INPUT') {
+        if (!group.current && jobId.current && requestError?.retryable) {
+          setConnecting(true)
+          timer = setTimeout(() => { void run(nextPollDelay(delay)) }, delay)
+          return
+        }
+        if (requestError?.code === 'INVALID_INPUT') {
           callbacks.current.onInvalidTopic(messageForError(problem))
           return
         }
@@ -111,7 +136,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
         setFailure({
           title: unavailable ? '这组练习已不可用' : insufficient ? '这个主题的依据不足' : '题目暂时没准备好',
           description: unavailable ? '可以重新生成一组练习。' : messageForError(problem),
-          retry: unavailable || requestError?.code === 'MISSING_QUIZ' ? 'new'
+          retry: unavailable || requestError?.code === 'MISSING_QUIZ' || requestError?.status === 404 ? 'new'
             : (requestError?.retryable || !requestError ? 'same' : 'none'),
           requestId: requestError?.requestId,
         })
@@ -125,16 +150,21 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
     }
   }, [attemptKey, failure, intent, retryTrigger, visible])
 
-  const restart = intent.kind === 'restart'
-  const step = generationStep(phase)
+  const live = intent.kind === 'generate'
+  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' ? intent.group.topicTitle : '固定题组'
+  const createdAt = status?.createdAt ? Date.parse(status.createdAt) : NaN
+  const startedAt = Number.isFinite(createdAt) ? createdAt : live ? intent.requestedAt : now
+  const phase = status?.status === 'SUCCEEDED' ? '正在打开练习'
+    : status?.phase ? generationPhases[status.phase]
+      : status ? '等待开始' : jobId.current ? '读取出题进度' : '正在提交主题'
   return <View className='stage'>
     <Tape>{title}</Tape>
     <View className={`manifest${failure ? ' is-error' : ''}`}>
       <View className='manifest-art' aria-hidden />
       <View className='manifest-title'>
         {failure ? <Text>{failure.title}</Text> : <>
-          <Text>{restart ? '正在打开' : '正在准备'}</Text>
-          <Text className='manifest-emphasis'>{restart ? '这组练习' : '你的 20 道题'}</Text>
+          <Text>{live ? '正在准备' : '正在打开'}</Text>
+          <Text className='manifest-emphasis'>{live ? '你的 20 道题' : '这组练习'}</Text>
         </>}
       </View>
       <View className='spot' aria-hidden />
@@ -142,17 +172,16 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
     {failure ? <View>
       <Text className='stage-note'>{failure.description}</Text>
       {failure.requestId && <Text className='stage-note'>请求编号 {failure.requestId}</Text>}
-    </View> : !restart && <>
-      <View className='step-list'>
-        {['读取主题资料', '生成并核对题目'].map((label, index) => {
-          const status = index < step ? 'complete' : index === step ? 'current' : 'queued'
-          return <View className={`step ${status}`} key={label}>
-            <Text>{label}</Text>
-            <Text className='stage-note'>{status === 'complete' ? '已完成' : status === 'current' ? '进行中' : '等待中'}</Text>
-          </View>
-        })}
+    </View> : live && <>
+      <View className='step current'>
+        <Text>{phase}</Text>
+        <Text className='generation-clock'>已等 {formatElapsed(startedAt, now)}</Text>
       </View>
-      <Text className='stage-note'>题组就绪后即可开始练习。</Text>
+      <Text className='stage-note'>{connecting
+        ? '正在重新连接，作业会在后台继续。'
+        : now - startedAt >= 30_000
+          ? '查资料和逐题核对有时会久一点。可以先回首页，稍后接着看。'
+          : '题组通过核验后会自动保存。'}</Text>
     </>}
     <View className='actions'>
       {failure?.retry === 'same' && <Action onClick={() => {
@@ -160,7 +189,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
         setRetryTrigger((version) => version + 1)
       }}>重试连接</Action>}
       {failure?.retry === 'new' && <Action onClick={onStartAgain}>重新生成</Action>}
-      <Action secondary onClick={onCancel}>{failure ? '换个主题' : '返回选主题'}</Action>
+      <Action secondary onClick={() => onCancel(Boolean(failure))}>{failure ? '换个主题' : live ? '返回首页，稍后查看' : '返回首页'}</Action>
     </View>
   </View>
 }

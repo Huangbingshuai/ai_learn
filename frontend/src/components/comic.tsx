@@ -114,7 +114,14 @@ export function Header({ title, layout, onBack }: {
     paddingRight: `${layout.headerRight}px`,
   }}>
     {onBack && <Button className='back ui-button' hoverClass='none' aria-label='返回' onClick={onBack}>‹</Button>}
-    <Text className='screen-title'>{title}</Text>
+    {title === '轻知闯关' ? (
+      <View className='home-brand'>
+        <View className='brand-main'><Text className='brand-letter brand-light'>轻</Text><Text className='brand-letter brand-know'>知</Text></View>
+        <Text className='brand-tag'>闯关</Text>
+      </View>
+    ) : (
+      <Text className='screen-title'>{title}</Text>
+    )}
   </View>
 }
 
