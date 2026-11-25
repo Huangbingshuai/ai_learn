@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     login_limit: int = Field(default=60, gt=0)
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_model: str = "deepseek-flash"
+    tavily_api_key: SecretStr = SecretStr("")
+    search_timeout: float = Field(default=15, gt=0, le=40)
     model_timeout: float = Field(default=100, gt=0)
     user_daily_generation_limit: int = Field(default=8, gt=0)
     global_daily_generation_limit: int = Field(default=500, gt=0)

@@ -37,7 +37,8 @@ class GenerationView(BaseModel):
     jobId: str
     status: Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]
     topicTitle: str
-    phase: Literal["READING_SOURCES", "GENERATING"] | None = None
+    phase: Literal["RESOLVING_TOPIC", "READING_SOURCES", "GENERATING", "VERIFYING"] | None = None
+    createdAt: datetime
     quizId: str | None = None
     quizExpiresAt: datetime | None = None
     error: ErrorView | None = None
@@ -51,21 +52,22 @@ def _job_statement(user_id: str):
     )
 
 
-def _topic_title(key: str) -> str:
+def _topic_title(key: str | None) -> str:
     try:
         return next((topic.title for topic in load_topics() if topic.topicKey == key), "学习主题")
     except ValueError:
         return "学习主题"
 
 
-def _job_view(
-    job: GenerationJob, quiz: Quiz | None, request: Request, title=None
-) -> GenerationView:
+def _job_view(job: GenerationJob, quiz: Quiz | None, request: Request) -> GenerationView:
     result = GenerationView(
         jobId=job.id,
         status=job.status,
-        topicTitle=quiz.topic_title if quiz else title or _topic_title(job.topic_key),
+        topicTitle=quiz.topic_title
+        if quiz
+        else (job.topic_title or job.topic_input or _topic_title(job.topic_key)),
         phase=job.phase,
+        createdAt=job.created_at,
     )
     now = utcnow()
     request_id = request.state.request_id
@@ -102,7 +104,10 @@ def create_job(
     idempotency_key: IdempotencyKey,
     request: Request,
 ) -> GenerationView:
-    input_digest = digest(normalize(body.topic))
+    normalized = normalize(body.topic)
+    if not any(char.isalnum() for char in normalized):
+        raise ApiError(422, "INVALID_INPUT", "请输入想学习的主题或问题。")
+    input_digest = digest(normalized)
     same_job = _job_statement(user_id).where(GenerationJob.idempotency_key == idempotency_key)
     settings = request.app.state.settings
 
@@ -115,11 +120,8 @@ def create_job(
 
         try:
             topic = match_topic(body.topic)
-            if topic is None:
-                choices = "、".join(f"「{item.title}」" for item in load_topics())
-                raise ApiError(422, "TOPIC_UNSUPPORTED", f"暂时没有匹配的主题。试试{choices}。")
         except ValueError:
-            raise ApiError(503, "SOURCE_INSUFFICIENT", "学习主题暂时不可用。") from None
+            topic = None
 
         now = utcnow()
         job_id = db.scalar(
@@ -127,12 +129,14 @@ def create_job(
             .values(
                 user_id=user_id,
                 source="TOPIC",
-                topic_key=topic.topicKey,
-                topic_version=topic.version,
+                topic_key=topic.topicKey if topic else None,
+                topic_version=topic.version if topic else None,
+                topic_title=topic.title if topic else None,
+                topic_input=None if topic else body.topic,
                 input_digest=input_digest,
                 idempotency_key=idempotency_key,
                 status="QUEUED",
-                phase="READING_SOURCES",
+                phase=None,
                 next_run_at=now,
                 created_at=now,
                 expires_at=now + timedelta(minutes=settings.job_minutes),
@@ -154,7 +158,7 @@ def create_job(
         reserve_quota(
             db, f"generation:user:{user_id}", start, end, settings.user_daily_generation_limit
         )
-        return _job_view(db.get(GenerationJob, job_id), None, request, title=topic.title)
+        return _job_view(db.get(GenerationJob, job_id), None, request)
 
 
 @router.get("/generation-jobs/{job_id}")

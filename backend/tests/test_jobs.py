@@ -50,7 +50,7 @@ def test_generation_idempotency_binds_input_and_quota(client, database, login):
         ("", "INVALID_INPUT"),
         ("季", "INVALID_INPUT"),
         ("四" * 81, "INVALID_INPUT"),
-        ("热力学", "TOPIC_UNSUPPORTED"),
+        ("？ ！", "INVALID_INPUT"),
     ],
 )
 def test_invalid_topic_does_not_enqueue(client, login, database, topic, code):
@@ -59,6 +59,20 @@ def test_invalid_topic_does_not_enqueue(client, login, database, topic, code):
     assert result.json()["code"] == code
     with database() as db:
         assert db.scalar(select(func.count()).select_from(GenerationJob)) == 0
+
+
+def test_new_topic_enqueues_without_catalog_match(client, login, database):
+    headers = login()
+    job = submit(client, headers, "什么是 Vibe Coding？", "live")
+    assert job.status_code == 202
+    result = job.json()
+    assert result["topicTitle"] == "什么是 Vibe Coding？"
+    assert result["status"] == "QUEUED"
+    assert result["createdAt"]
+    assert submit(client, headers, "什么是 vibe-coding", "live").json() == result
+    with database() as db:
+        row = db.get(GenerationJob, result["jobId"])
+        assert row.topic_key is None and row.topic_version is None
 
 
 def test_atomic_job_quota_and_concurrent_idempotency(database, settings):
