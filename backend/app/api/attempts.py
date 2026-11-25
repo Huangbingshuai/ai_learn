@@ -244,6 +244,20 @@ def read_attempt(attempt_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
     return _attempt_view(db, attempt, _owned_quiz(db, attempt.quiz_id, user_id))
 
 
+@router.get("/quizzes/{quiz_id}/latest-attempt")
+def latest_attempt(quiz_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
+    quiz = _owned_quiz(db, str(quiz_id), user_id)
+    attempt = db.scalar(
+        select(Attempt)
+        .where(Attempt.quiz_id == quiz.id, Attempt.user_id == user_id, Attempt.status == "ACTIVE")
+        .order_by(Attempt.created_at.desc(), Attempt.id.desc())
+        .limit(1)
+    )
+    if attempt is None:
+        raise not_found()
+    return _attempt_view(db, attempt, quiz)
+
+
 class SubmitAnswer(BaseModel):
     selectedOptionIds: list[Identifier] = Field(min_length=1, max_length=24)
 

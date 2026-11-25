@@ -521,3 +521,22 @@ def test_migration_backfills_takeaway_sources_from_retained_records(
     result = client.get(f"/v1/records/{record_id}", headers=headers)
     expected = {question_source_id, "retained-quiz-only"} if keep_quiz else {question_source_id}
     assert {item["evidenceId"] for item in result.json()["takeawayEvidence"]} == expected
+
+
+def test_latest_attempt_returns_progress_only_to_owner(client, play, login, fixed_data):
+    headers, quiz_id, attempt = play
+    path = f"/v1/quizzes/{quiz_id}/latest-attempt"
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["attemptId"] == attempt["attemptId"]
+    assert response.json()["answeredCount"] == 0
+    question = fixed_data["questions"][0]
+    choose(
+        client,
+        headers,
+        attempt["attemptId"],
+        question["questionId"],
+        [question["correctOptionIds"][0]],
+    )
+    assert client.get(path, headers=headers).json()["answeredCount"] == 1
+    assert client.get(path, headers=login("other-device-id")).status_code == 404

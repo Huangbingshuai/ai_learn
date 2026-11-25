@@ -118,7 +118,7 @@ export function HomeScreen({
           <Text className='continue-title'>{intent.title}</Text>
           <Text className='continue-meta'>
             {intent.status === 'SUCCEEDED'
-              ? '题组已生成，去答题'
+              ? '已答 0/20 题'
               : intent.phase ? generationPhases[intent.phase] : '正在出题'}
           </Text>
         </View>
@@ -132,7 +132,8 @@ export function HomeScreen({
         <View className='continue-copy'>
           <Text className='continue-title'>{restart.topicTitle}</Text>
           <Text className='continue-meta'>
-            {canRestart ? '可以从第 1 题重新开始' : '题组即将到期，重新生成'}
+            {!canRestart ? '练习已到期' : restart.attemptId && typeof restart.answeredCount === 'number' && typeof restart.totalQuestions === 'number'
+              ? `已答 ${restart.answeredCount}/${restart.totalQuestions} 题` : '点击开始练习'}
           </Text>
         </View>
         <Text className='continue-arrow' aria-hidden>›</Text>

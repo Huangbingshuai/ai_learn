@@ -141,7 +141,16 @@ export default function Index() {
   }
 
   useEffect(() => {
-    if (screen.name === 'home') void reconcilePending()
+    if (screen.name !== 'home') return
+    void reconcilePending()
+    const saved = readRestartGroup()
+    if (!saved) return
+    let active = true
+    const lookup = saved.attemptId ? api.attempt(saved.attemptId) : api.latestAttempt(saved.quizId)
+    lookup.then((attempt) => {
+      if (active && attempt.status === 'ACTIVE') recordRestartGroup(attempt)
+    }).catch(() => {})
+    return () => { active = false }
   }, [screen.name])
 
   function openGeneration(intent: PendingGeneration) {
@@ -167,7 +176,7 @@ export default function Index() {
 
   function restartQuiz(group: RestartGroup) {
     if (!restartAvailable(group.quizExpiresAt)) launchGeneration(group.topicTitle)
-    else setScreen({ name: 'generation', intent: { kind: 'restart', group, key: makeKey() } })
+    else setScreen({ name: 'generation', intent: { kind: group.attemptId ? 'resume' : 'restart', group, key: makeKey() } })
   }
 
   function onBack() {
@@ -223,7 +232,7 @@ export default function Index() {
           onFailed={() => { if (intent.kind === 'generate') forgetPending(intent.key) }}
           onStartAgain={() => {
             if (intent.kind === 'fixed') launchFixed()
-            else if (intent.kind === 'restart') launchGeneration(intent.group.topicTitle)
+            else if (intent.kind === 'restart' || intent.kind === 'resume') launchGeneration(intent.group.topicTitle)
             else if (intent.kind === 'saved') launchGeneration(intent.title, { topicKey: intent.topicKey })
             else {
               forgetPending(intent.key)
@@ -234,6 +243,7 @@ export default function Index() {
       case 'quiz':
         return <QuizScreen attempt={screen.attempt} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onAnswer={(receipt) => {
           if (receipt.recordId) recordRestartGroup()
+          else recordRestartGroup({ ...screen.attempt, answeredCount: receipt.answeredCount, totalQuestions: receipt.totalQuestions })
           setScreen({ name: 'feedback', attempt: screen.attempt, receipt })
         }} />
       case 'feedback':
@@ -279,7 +289,7 @@ export default function Index() {
     {tab && <Tabs current={tab} safeBottom={layout.safeBottom} onNavigate={(next) => setScreen({ name: next })} />}
     {evidence && <EvidenceSheet evidence={evidence} onClose={() => setEvidence(undefined)} />}
     {confirmExit && <Sheet title='要退出这组练习？' onClose={() => setConfirmExit(false)}>
-      <Text className='body-copy'>退出后会清除本次作答进度。题组仍有效时，可以从第 1 题重开。</Text>
+      <Text className='body-copy'>返回首页后可继续当前答题进度。</Text>
       <Action onClick={() => setConfirmExit(false)}>继续答题</Action>
       <Action secondary onClick={() => { setConfirmExit(false); openHome() }}>退出练习</Action>
     </Sheet>}

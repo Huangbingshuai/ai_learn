@@ -82,6 +82,7 @@ export const api = {
   startAttempt: (quizId: string, idempotencyKey: string) => request<Attempt>({
     path: '/v1/attempts', method: 'POST', data: { quizId } satisfies BodyFor<'/v1/attempts', 'post'>, idempotencyKey,
   }),
+  latestAttempt: (quizId: string) => request<Attempt>({ path: `/v1/quizzes/${encodeURIComponent(quizId)}/latest-attempt` }),
   attempt: (id: string) => request<Attempt>({ path: `/v1/attempts/${encodeURIComponent(id)}` }),
   answer: (attemptId: string, questionId: string, selectedOptionIds: string[]) => request<AnswerReceipt>({
     path: `/v1/attempts/${encodeURIComponent(attemptId)}/answers/${encodeURIComponent(questionId)}`,
@@ -96,7 +97,7 @@ export const api = {
   }),
 }
 
-export type RestartGroup = QuizGroup & { topicTitle: string }
+export type RestartGroup = QuizGroup & { topicTitle: string; attemptId?: string; answeredCount?: number; totalQuestions?: number }
 export type TopicInput = { topic: string } | { topicKey: string }
 export type PendingGeneration = {
   kind: 'generate'
@@ -136,6 +137,7 @@ export function readRestartGroup(): RestartGroup | undefined {
 }
 
 export function saveRestartGroup(group?: RestartGroup) {
-  const restart = group && { quizId: group.quizId, topicTitle: group.topicTitle, quizExpiresAt: group.quizExpiresAt }
+  const restart = group && { quizId: group.quizId, topicTitle: group.topicTitle, quizExpiresAt: group.quizExpiresAt,
+    attemptId: group.attemptId, answeredCount: group.answeredCount, totalQuestions: group.totalQuestions }
   save(RESTART_KEY, restart)
 }

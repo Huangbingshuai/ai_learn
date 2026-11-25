@@ -11,6 +11,7 @@ export type GenerationIntent =
   | { kind: 'fixed'; key: string }
   | { kind: 'saved'; topicKey: string; title: string; key: string }
   | { kind: 'restart'; group: RestartGroup; key: string }
+  | { kind: 'resume'; group: RestartGroup; key: string }
 
 type Failure = {
   title: string
@@ -80,6 +81,11 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
 
     async function run(delay: number) {
       try {
+        if (intent.kind === 'resume') {
+          const attempt = await api.attempt(intent.group.attemptId!)
+          if (active) callbacks.current.onOpen(attempt)
+          return
+        }
         if (!group.current) {
           if (intent.kind === 'restart') group.current = intent.group
           else if (intent.kind === 'saved') group.current = await api.savedQuiz(intent.topicKey)
@@ -159,7 +165,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
   }, [attemptKey, failure, intent, retryTrigger, visible])
 
   const live = intent.kind === 'generate'
-  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' ? intent.group.topicTitle : intent.kind === 'saved' ? intent.title : '固定题组'
+  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' || intent.kind === 'resume' ? intent.group.topicTitle : intent.kind === 'saved' ? intent.title : '固定题组'
   const createdAt = status?.createdAt ? Date.parse(status.createdAt) : NaN
   const startedAt = Number.isFinite(createdAt) ? createdAt : live ? intent.requestedAt : now
   const phase = status?.status === 'SUCCEEDED' ? '正在打开练习'
