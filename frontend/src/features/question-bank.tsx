@@ -147,9 +147,9 @@ export function QuestionBankScreen({ onTopic }: {
           <View className='topic-symbol' aria-hidden />
           <View className='topic-library-copy'>
             <Text className='topic-title'>{topic.title}</Text>
-            {topic.attemptId && topic.attemptStatus === 'ACTIVE' && typeof topic.answeredCount === 'number'
+            {topic.attemptId && typeof topic.answeredCount === 'number'
               && typeof topic.totalQuestions === 'number'
-              && <Text className='topic-progress'>已答 {topic.answeredCount}/{topic.totalQuestions} 题</Text>}
+              && <Text className='topic-progress'>{topic.attemptStatus === 'PASSED' ? '已完成' : '已答'} {topic.answeredCount}/{topic.totalQuestions} 题</Text>}
             {topic.originalInput && topic.originalInput.trim() !== topic.title.trim()
               && <Text className='topic-original-input'>原始主题：{topic.originalInput}</Text>}
           </View>
