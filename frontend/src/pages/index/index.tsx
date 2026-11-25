@@ -13,17 +13,20 @@ import { GenerationScreen, type GenerationIntent } from '../../features/generati
 import { HomeScreen } from '../../features/home'
 import { FeedbackScreen, QuizScreen, type ActiveAttempt } from '../../features/quiz'
 import { HistoryScreen, RecordScreen } from '../../features/records'
+import { MistakeBookScreen, MistakeDetailScreen } from '../../features/mistake-book'
+import { createMistakeBookState, type MistakeBookState } from '../../features/mistakes'
 import './index.css'
 
 type ResultScreen = { name: 'result' | 'record'; recordId: string }
 type MistakesScreen = { name: 'mistakes'; recordId: string; from: ResultScreen }
 type Screen =
-  | { name: 'home' | 'history' }
+  | { name: 'home' | 'history' | 'mistakeBook' }
   | { name: 'generation'; intent: GenerationIntent }
   | { name: 'quiz'; attempt: ActiveAttempt }
   | { name: 'feedback'; attempt: ActiveAttempt; receipt: AnswerReceipt }
   | ResultScreen
   | MistakesScreen
+  | { name: 'mistakeDetail'; fingerprint: string }
   | { name: 'review'; recordId: string; questionId: string; from: ResultScreen | MistakesScreen }
 
 const titles: Record<Screen['name'], string> = {
@@ -35,6 +38,8 @@ const titles: Record<Screen['name'], string> = {
   history: '学习记录',
   record: '记录详情',
   mistakes: '错题回顾',
+  mistakeBook: '错题本',
+  mistakeDetail: '错题详情',
   review: '作答回顾',
 }
 
@@ -50,6 +55,8 @@ export default function Index() {
   const [evidence, setEvidence] = useState<Evidence[]>()
   const [confirmExit, setConfirmExit] = useState(false)
   const [profile, setProfile] = useState<UserProfile>()
+  const [mistakeBook, setMistakeBook] = useState<MistakeBookState>(createMistakeBookState)
+  const mistakeScrollTop = useRef(0)
   const cache = useRef(new Map<string, LearningRecord>()).current
   const profileUserId = useRef<string>()
 
@@ -217,6 +224,9 @@ export default function Index() {
       case 'mistakes':
         setScreen(screen.from)
         break
+      case 'mistakeDetail':
+        setScreen({ name: 'mistakeBook' })
+        break
       case 'generation':
         openHome()
         break
@@ -279,6 +289,30 @@ export default function Index() {
           onEvidence={setEvidence} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onResult={(recordId) => setScreen({ name: 'result', recordId })} />
       case 'history':
         return <HistoryScreen onHome={openHome} onRecord={(recordId) => setScreen({ name: 'record', recordId })} />
+      case 'mistakeBook':
+        return <MistakeBookScreen state={mistakeBook} onState={setMistakeBook}
+          onOpen={(fingerprint) => {
+            setMistakeBook((previous) => ({ ...previous, scrollTop: mistakeScrollTop.current }))
+            setScreen({ name: 'mistakeDetail', fingerprint })
+          }} />
+      case 'mistakeDetail':
+        return <MistakeDetailScreen fingerprint={screen.fingerprint}
+          onUpdated={(previous, next) => setMistakeBook((state) => {
+            const matchesFilter = state.status === next.status
+            const existingIndex = state.items.findIndex((item) => item.fingerprint === next.fingerprint)
+            const items = matchesFilter
+              ? existingIndex >= 0
+                ? state.items.map((item) => item.fingerprint === next.fingerprint ? next : item)
+                : [next, ...state.items]
+              : state.items.filter((item) => item.fingerprint !== next.fingerprint)
+            const countDelta = Number(next.status === 'to_review') - Number(previous.status === 'to_review')
+            return {
+              ...state,
+              items,
+              pendingCount: Math.max(0, state.pendingCount + countDelta),
+            }
+          })}
+          onEvidence={setEvidence} />
       case 'result':
       case 'record':
       case 'mistakes':
@@ -297,7 +331,9 @@ export default function Index() {
     }
   }
 
-  const tab = screen.name === 'home' || screen.name === 'history' ? screen.name : undefined
+  const tab = screen.name === 'home' || screen.name === 'history' || screen.name === 'mistakeBook'
+    ? screen.name
+    : undefined
   const bodyHeight = Math.max(0, layout.windowHeight - layout.headerHeight - (tab ? layout.tabHeight + layout.safeBottom : 0))
   const routeKey = screen.name === 'quiz' || screen.name === 'feedback'
     ? `${screen.name}:${screen.attempt.question.questionId}`
@@ -306,7 +342,11 @@ export default function Index() {
   return <View className='app-shell' style={{ height: `${layout.windowHeight}px` }}>
     <Header title={titles[screen.name]} layout={layout} onBack={tab ? undefined : onBack} />
     <ScrollView className='app-scroll' key={routeKey} style={{ height: `${bodyHeight}px` }}
-      scrollY={!evidence && !confirmExit}>
+      scrollY={!evidence && !confirmExit}
+      scrollTop={screen.name === 'mistakeBook' ? mistakeBook.scrollTop : 0}
+      onScroll={(event) => {
+        if (screen.name === 'mistakeBook') mistakeScrollTop.current = event.detail.scrollTop
+      }}>
       <View className={`screen screen-${screen.name}`} style={{
         minHeight: `${bodyHeight}px`,
         paddingBottom: `${Math.max(layout.screenInset, tab ? 0 : layout.safeBottom)}px`,

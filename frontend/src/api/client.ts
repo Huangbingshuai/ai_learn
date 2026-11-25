@@ -1,7 +1,7 @@
 import Taro from '@tarojs/taro'
 import { makeKey, prunePendingGenerations } from '../features/flow'
 import { createRequestClient, readResponse, RequestError, type RequestOptions, type Session } from './request'
-import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, QuizGroup, RecordPage, TopicList, UserProfile } from './types'
+import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, Mistake, MistakePage, MistakeStatus, QuizGroup, RecordPage, TopicList, UserProfile } from './types'
 
 const SESSION_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.session.dev.v1' : 'qingzhi.session.wechat.v1'
 const DEVICE_KEY = 'qingzhi.device.v1'
@@ -105,6 +105,20 @@ export const api = {
     path: '/v1/records?limit=20' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),
   }),
   record: (id: string) => request<LearningRecord>({ path: `/v1/records/${encodeURIComponent(id)}` }),
+  mistakes: (status: MistakeStatus, topicKey?: string, cursor?: string) => {
+    const params = [`status=${encodeURIComponent(status)}`, 'limit=20']
+    if (topicKey) params.push(`topicKey=${encodeURIComponent(topicKey)}`)
+    if (cursor) params.push(`cursor=${encodeURIComponent(cursor)}`)
+    return request<MistakePage>({ path: `/v1/mistakes?${params.join('&')}` })
+  },
+  mistake: (fingerprint: string) => request<Mistake>({
+    path: `/v1/mistakes/${encodeURIComponent(fingerprint)}`,
+  }),
+  updateMistake: (fingerprint: string, status: MistakeStatus) => request<Mistake>({
+    path: `/v1/mistakes/${encodeURIComponent(fingerprint)}`,
+    method: 'PATCH',
+    data: { status } satisfies BodyFor<'/v1/mistakes/{fingerprint}', 'patch'>,
+  }),
   retrySummary: (id: string, idempotencyKey: string) => request<AiSummary>({
     path: `/v1/records/${encodeURIComponent(id)}/ai-summary/retry`, method: 'POST', idempotencyKey,
   }),

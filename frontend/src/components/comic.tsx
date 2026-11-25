@@ -2,6 +2,7 @@ import { Button, ScrollView, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { PropsWithChildren, ReactNode } from 'react'
 import type { Evidence } from '../api/types'
+import { TAB_DESTINATIONS } from '../features/mistakes'
 
 type ActionProps = {
   children: ReactNode
@@ -126,16 +127,14 @@ export function Header({ title, layout, onBack }: {
 }
 
 export function Tabs({ current, safeBottom, onNavigate }: {
-  current: 'home' | 'history'
+  current: typeof TAB_DESTINATIONS[number]['key']
   safeBottom: number
-  onNavigate: (next: 'home' | 'history') => void
+  onNavigate: (next: typeof TAB_DESTINATIONS[number]['key']) => void
 }) {
   return <View className='tabs' style={{ paddingBottom: `${safeBottom}px` }}>
-    <Button className='tab ui-button' hoverClass='none' onClick={() => onNavigate('home')}>
-      <Text className={current === 'home' ? 'tab-label current' : 'tab-label'}>开始学习</Text>
-    </Button>
-    <Button className='tab ui-button' hoverClass='none' onClick={() => onNavigate('history')}>
-      <Text className={current === 'history' ? 'tab-label current' : 'tab-label'}>学习记录</Text>
-    </Button>
+    {TAB_DESTINATIONS.map(({ key, label }) => <Button key={key}
+      className='tab ui-button' hoverClass='none' onClick={() => onNavigate(key)}>
+      <Text className={current === key ? 'tab-label current' : 'tab-label'}>{label}</Text>
+    </Button>)}
   </View>
 }

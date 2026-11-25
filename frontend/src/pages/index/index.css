@@ -535,6 +535,36 @@
 }
 .history-head { margin-bottom: 13px; }
 .history-list .comic-row { min-height: 57px; }
+.mistake-filters { display: flex; flex-direction: column; gap: 10px; margin: 0 0 17px; }
+.mistake-status-tabs { display: flex; gap: 8px; }
+.mistake-status {
+  display: flex;
+  min-height: 37px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 3px 8px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.mistake-status.current { background: var(--sky); color: var(--ink); box-shadow: 2px 2px var(--ink); }
+.mistake-count { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 50%; background: var(--warm); color: var(--ink); font-size: 11px; font-weight: 850; }
+.mistake-topic-picker { display: flex; min-height: 37px; align-items: center; justify-content: space-between; padding: 5px 10px; border: 1px solid var(--ink); border-radius: 3px 8px; background: var(--white); color: var(--ink); font-size: 12px; font-weight: 700; }
+.mistake-topic-picker .topic-arrow { color: var(--blue); }
+.mistake-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.mistake-list-head .h2 { margin: 0; }
+.mistake-list .comic-row { min-height: 57px; align-items: flex-start; padding-top: 8px; padding-bottom: 8px; }
+.mistake-list .comic-row .tape { margin-top: 3px; }
+.mistake-more { margin-top: 15px; }
+.mistake-detail-head { margin: 0 0 16px; padding: 12px; border: 1px solid var(--ink); border-radius: 3px 12px; background: var(--sky); box-shadow: 2px 3px var(--ink); }
+.mistake-detail-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.mistake-detail-meta { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+.mistake-detail-question { display: block; font-size: 17px; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
 .empty-panel { display: flex; flex-direction: column; gap: 8px; padding: 15px; border: 1px solid var(--ink); border-radius: 3px 12px 3px 12px; background: var(--white); }
 .empty-panel .h1, .empty-panel .body-copy { margin: 0; }
 .empty-panel .body-copy { color: var(--muted); }

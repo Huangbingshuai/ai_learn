@@ -39,6 +39,41 @@ export interface paths {
         patch: operations["update_profile_v1_me_patch"];
         trace?: never;
     };
+    "/v1/mistakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mistakes */
+        get: operations["list_mistakes_v1_mistakes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mistakes/{fingerprint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mistake */
+        get: operations["get_mistake_v1_mistakes__fingerprint__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Mistake Status */
+        patch: operations["update_mistake_status_v1_mistakes__fingerprint__patch"];
+        trace?: never;
+    };
     "/v1/attempts": {
         parameters: {
             query?: never;
@@ -50,6 +85,23 @@ export interface paths {
         put?: never;
         /** Start Attempt */
         post: operations["start_attempt_v1_attempts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mistakes/{fingerprint}/practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Mistake Practice */
+        post: operations["start_mistake_practice_v1_mistakes__fingerprint__practice_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -346,6 +398,11 @@ export interface components {
              * @enum {string}
              */
             status: "ACTIVE" | "PASSED" | "ABANDONED";
+            /**
+             * Purpose
+             * @enum {string}
+             */
+            purpose: "LEARNING" | "PRACTICE";
             /** Answeredcount */
             answeredCount: number;
             /** Totalquestions */
@@ -422,6 +479,11 @@ export interface components {
             quizExpiresAt?: string | null;
             error?: components["schemas"]["ErrorView"] | null;
         };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /** LoginView */
         LoginView: {
             /** Accesstoken */
@@ -433,6 +495,68 @@ export interface components {
             expiresAt: string;
             /** Userid */
             userId: string;
+        };
+        /** MistakePage */
+        MistakePage: {
+            /** Items */
+            items: components["schemas"]["MistakeView"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Pendingcount */
+            pendingCount: number;
+            /** Topics */
+            topics: components["schemas"]["MistakeTopic"][];
+        };
+        /** MistakeStatusUpdate */
+        MistakeStatusUpdate: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "to_review" | "mastered";
+        };
+        /** MistakeTopic */
+        MistakeTopic: {
+            /** Topickey */
+            topicKey: string;
+            /** Title */
+            title: string;
+        };
+        /** MistakeView */
+        MistakeView: {
+            /** Fingerprint */
+            fingerprint: string;
+            /** Question */
+            question: {
+                [key: string]: unknown;
+            };
+            /** Latestreceipt */
+            latestReceipt: {
+                [key: string]: unknown;
+            };
+            /** Topickey */
+            topicKey: string;
+            /** Topictitle */
+            topicTitle: string;
+            /** Wrongcount */
+            wrongCount: number;
+            /**
+             * Firstwrongat
+             * Format: date-time
+             */
+            firstWrongAt: string;
+            /**
+             * Lastwrongat
+             * Format: date-time
+             */
+            lastWrongAt: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "to_review" | "mastered";
+            /** Masteredat */
+            masteredAt: string | null;
         };
         /** Option */
         Option: {
@@ -601,6 +725,19 @@ export interface components {
              */
             canDelete: boolean;
         };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
         /** WechatLogin */
         WechatLogin: {
             /** Code */
@@ -755,6 +892,160 @@ export interface operations {
             };
         };
     };
+    list_mistakes_v1_mistakes_get: {
+        parameters: {
+            query?: {
+                status?: "to_review" | "mastered";
+                topicKey?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MistakePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mistake_v1_mistakes__fingerprint__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MistakeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_mistake_status_v1_mistakes__fingerprint__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MistakeStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MistakeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_attempt_v1_attempts_post: {
         parameters: {
             query?: never;
@@ -769,6 +1060,75 @@ export interface operations {
                 "application/json": components["schemas"]["StartAttempt"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    start_mistake_practice_v1_mistakes__fingerprint__practice_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "idempotency-key": string;
+            };
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             201: {
