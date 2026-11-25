@@ -90,3 +90,19 @@ def test_generated_quiz_must_be_valid_and_grounded(tamper):
         judge["options"][0]["text"] = "是"
     with pytest.raises(ValueError):
         validate_quiz(raw, topics.get_topic_version("seasons", "v1"))
+
+
+def test_seed_topics_open_saved_quiz_without_generation(client, login, database):
+    from app.db import Quiz
+
+    headers = login()
+    first = client.post("/v1/topics/seasons/quiz", headers=headers)
+    assert first.status_code == 200
+    assert client.post("/v1/topics/seasons/quiz", headers=headers).json() == first.json()
+    other = login("other-user-seed")
+    assert client.post("/v1/topics/moon/quiz", headers=other).status_code == 404
+    with database.begin() as session:
+        session.get(Quiz, first.json()["quizId"]).topic_key = "moon"
+    moon = client.post("/v1/topics/moon/quiz", headers=headers)
+    assert moon.status_code == 200
+    assert moon.json()["quizId"] == first.json()["quizId"]

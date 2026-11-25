@@ -548,6 +548,7 @@ class Worker:
             session.execute(
                 delete(Quiz).where(
                     Quiz.expires_at <= now - timedelta(hours=24),
+                    Quiz.topic_key.not_in(CURRENT_VERSIONS),
                     ~exists().where(
                         SavedTopic.user_id == Quiz.user_id, SavedTopic.topic_key == Quiz.topic_key
                     ),

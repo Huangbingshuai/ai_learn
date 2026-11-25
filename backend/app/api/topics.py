@@ -9,7 +9,7 @@ from app.api.attempts import QuizView
 from app.api.dependencies import DB, CurrentUser
 from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Attempt, Quiz, SavedTopic, utcnow
-from app.domain.topics import TopicView, load_topics
+from app.domain.topics import CURRENT_VERSIONS, TopicView, load_topics
 
 router = APIRouter(responses={401: {"model": ErrorView}, 422: {"model": ErrorView}})
 
@@ -62,7 +62,7 @@ def list_topics(
 @router.post("/topics/{topic_key}/quiz")
 def open_saved_quiz(topic_key: str, db: DB, user_id: CurrentUser, request: Request) -> QuizView:
     with db.begin():
-        if db.get(SavedTopic, (user_id, topic_key)) is None:
+        if topic_key not in CURRENT_VERSIONS and db.get(SavedTopic, (user_id, topic_key)) is None:
             raise not_found()
         quiz = db.scalar(
             select(Quiz)
@@ -71,8 +71,10 @@ def open_saved_quiz(topic_key: str, db: DB, user_id: CurrentUser, request: Reque
             .limit(1)
             .with_for_update()
         )
+        if quiz is None and topic_key != "seasons":
+            raise ApiError(404, "SAVED_QUIZ_UNAVAILABLE", "这组题尚未保存，请重新生成。")
         if quiz is None:
-            raise ApiError(404, "SAVED_QUIZ_UNAVAILABLE", "已保存的题组已不可用，请重新生成。")
+            return _create_initial_seasons(db, user_id, request)
         now = utcnow()
         if quiz.expires_at <= now:
             db.execute(
@@ -82,3 +84,48 @@ def open_saved_quiz(topic_key: str, db: DB, user_id: CurrentUser, request: Reque
             )
             quiz.expires_at = now + timedelta(hours=request.app.state.settings.quiz_hours)
         return QuizView(quizId=quiz.id, quizExpiresAt=quiz.expires_at)
+
+
+def _create_initial_seasons(db: DB, user_id: str, request: Request) -> QuizView:
+    from app.api.dependencies import digest
+    from app.db import GenerationJob, new_id
+    from app.domain.quizzes import RULES_VERSION, validate_quiz
+    from app.domain.topics import get_topic_version, load_fixed_quiz
+
+    now = utcnow()
+    try:
+        topic = get_topic_version("seasons", "v1")
+        content = validate_quiz(load_fixed_quiz(), topic).model_dump(mode="json")
+    except (ValueError, OSError) as error:
+        raise ApiError(503, "SOURCE_INSUFFICIENT", "预置题组暂时不可用。") from error
+    job = GenerationJob(
+        user_id=user_id,
+        source="FIXED",
+        topic_key="seasons",
+        topic_version="v1",
+        input_digest=digest("fixed-seasons"),
+        idempotency_key=new_id(),
+        status="SUCCEEDED",
+        next_run_at=now,
+        created_at=now,
+        expires_at=now + timedelta(minutes=request.app.state.settings.job_minutes),
+        model_name="fixed",
+        rules_version=RULES_VERSION,
+    )
+    db.add(job)
+    db.flush()
+    quiz = Quiz(
+        job_id=job.id,
+        user_id=user_id,
+        topic_key="seasons",
+        topic_title=topic["title"],
+        content=content,
+        evidence=topic["evidence"],
+        ai_generated=False,
+        created_at=now,
+        expires_at=now + timedelta(hours=request.app.state.settings.quiz_hours),
+        rules_version=RULES_VERSION,
+    )
+    db.add(quiz)
+    db.flush()
+    return QuizView(quizId=quiz.id, quizExpiresAt=quiz.expires_at)
