@@ -1,9 +1,10 @@
 import type { Mistake, MistakePage, MistakeStatus, MistakeTopic } from '../api/types'
 
 export const TAB_DESTINATIONS = [
-  { key: 'home', label: '开始学习' },
-  { key: 'history', label: '学习记录' },
+  { key: 'home', label: '学习' },
+  { key: 'questionBank', label: '题库' },
   { key: 'mistakeBook', label: '错题本' },
+  { key: 'profile', label: '我的' },
 ] as const
 
 export type MistakeBookState = {
@@ -18,6 +19,10 @@ export type MistakeBookState = {
 }
 
 export type MistakeBookViewState = 'loading' | 'error' | 'empty' | 'list'
+
+export function practiceFinished(answeredCount: number, totalQuestions: number) {
+  return totalQuestions > 0 && answeredCount >= totalQuestions
+}
 
 export function createMistakeBookState(): MistakeBookState {
   return {

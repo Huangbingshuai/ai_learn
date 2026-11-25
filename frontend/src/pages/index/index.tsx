@@ -11,6 +11,8 @@ import { Action, EvidenceSheet, Header, Sheet, Tabs, getWindowLayout } from '../
 import { makeKey, PENDING_UNSUBMITTED_AGE, pendingIdentity, prunePendingGenerations, restartAvailable } from '../../features/flow'
 import { GenerationScreen, type GenerationIntent } from '../../features/generation'
 import { HomeScreen } from '../../features/home'
+import { QuestionBankScreen } from '../../features/question-bank'
+import { ProfileScreen } from '../../features/profile'
 import { FeedbackScreen, QuizScreen, type ActiveAttempt } from '../../features/quiz'
 import { HistoryScreen, RecordScreen } from '../../features/records'
 import { MistakeBookScreen, MistakeDetailScreen } from '../../features/mistake-book'
@@ -20,10 +22,10 @@ import './index.css'
 type ResultScreen = { name: 'result' | 'record'; recordId: string }
 type MistakesScreen = { name: 'mistakes'; recordId: string; from: ResultScreen }
 type Screen =
-  | { name: 'home' | 'history' | 'mistakeBook' }
+  | { name: 'home' | 'questionBank' | 'history' | 'mistakeBook' | 'profile' }
   | { name: 'generation'; intent: GenerationIntent }
-  | { name: 'quiz'; attempt: ActiveAttempt }
-  | { name: 'feedback'; attempt: ActiveAttempt; receipt: AnswerReceipt }
+  | { name: 'quiz'; attempt: ActiveAttempt; practiceFingerprint?: string }
+  | { name: 'feedback'; attempt: ActiveAttempt; receipt: AnswerReceipt; practiceFingerprint?: string }
   | ResultScreen
   | MistakesScreen
   | { name: 'mistakeDetail'; fingerprint: string }
@@ -36,6 +38,8 @@ const titles: Record<Screen['name'], string> = {
   feedback: '练习',
   result: '本次结果',
   history: '学习记录',
+  questionBank: '我的题库',
+  profile: '我的',
   record: '记录详情',
   mistakes: '错题回顾',
   mistakeBook: '错题本',
@@ -111,6 +115,17 @@ export default function Index() {
     }
     recordRestartGroup(attempt)
     setScreen({ name: 'quiz', attempt: { ...attempt, question: attempt.question } })
+  }
+
+  function openMistakePractice(attempt: Attempt, fingerprint: string) {
+    if (attempt.status !== 'ACTIVE' || !attempt.question) {
+      throw new RequestError('ATTEMPT_UNAVAILABLE', '这道题暂时无法开始再练，请重试。', 410)
+    }
+    setScreen({
+      name: 'quiz',
+      attempt: { ...attempt, question: attempt.question },
+      practiceFingerprint: fingerprint,
+    })
   }
 
   function updatePending(change: (entries: PendingGeneration[]) => PendingGeneration[]) {
@@ -236,18 +251,14 @@ export default function Index() {
   function renderScreen() {
     switch (screen.name) {
       case 'home':
-        return <HomeScreen input={input} error={topicError} restart={restart} pending={pending} profile={profile}
-          onProfile={async (nickname) => {
-            const next = await api.updateProfile(nickname)
-            applyProfile(next)
-            return next
-          }}
+        return <HomeScreen input={input} error={topicError} restart={restart} pending={pending}
           onEdit={(next) => { setInput(next); setTopicError('') }} onError={setTopicError}
-          onGenerate={launchGeneration} onTopic={(topic) => {
-            updatePending((entries) => entries.filter((entry) => entry.title !== topic.title))
-            setScreen({ name: 'generation', intent: { kind: 'saved', topicKey: topic.topicKey, title: topic.title, key: makeKey() } })
-          }}
-          onPending={openGeneration} onFixedQuiz={launchFixed} onRestart={restartQuiz} />
+          onGenerate={launchGeneration} onPending={openGeneration} onRestart={restartQuiz} />
+      case 'questionBank':
+        return <QuestionBankScreen onTopic={(topic) => {
+          updatePending((entries) => entries.filter((entry) => entry.title !== topic.title))
+          setScreen({ name: 'generation', intent: { kind: 'saved', topicKey: topic.topicKey, title: topic.title, key: makeKey() } })
+        }} onFixedQuiz={launchFixed} />
       case 'generation': {
         const { intent } = screen
         return <GenerationScreen intent={intent} visible={visible}
@@ -280,15 +291,27 @@ export default function Index() {
       case 'quiz':
         return <QuizScreen attempt={screen.attempt} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onAnswer={(receipt) => {
           void api.profile().then(applyProfile).catch(() => {})
-          if (receipt.recordId) recordRestartGroup()
-          else recordRestartGroup({ ...screen.attempt, answeredCount: receipt.answeredCount, totalQuestions: receipt.totalQuestions })
-          setScreen({ name: 'feedback', attempt: screen.attempt, receipt })
+          if (!screen.practiceFingerprint) {
+            if (receipt.recordId) recordRestartGroup()
+            else recordRestartGroup({ ...screen.attempt, answeredCount: receipt.answeredCount, totalQuestions: receipt.totalQuestions })
+          }
+          setScreen({ name: 'feedback', attempt: screen.attempt, receipt, practiceFingerprint: screen.practiceFingerprint })
         }} />
       case 'feedback':
         return <FeedbackScreen attempt={screen.attempt} receipt={screen.receipt} onOpen={openAttempt}
-          onEvidence={setEvidence} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onResult={(recordId) => setScreen({ name: 'result', recordId })} />
+          onEvidence={setEvidence} onRegenerate={() => launchGeneration(screen.attempt.topicTitle)} onResult={(recordId) => setScreen({ name: 'result', recordId })}
+          practiceFingerprint={screen.practiceFingerprint} onPracticeFinished={() => {
+            if (screen.practiceFingerprint) setScreen({ name: 'mistakeDetail', fingerprint: screen.practiceFingerprint })
+          }} />
       case 'history':
         return <HistoryScreen onHome={openHome} onRecord={(recordId) => setScreen({ name: 'record', recordId })} />
+      case 'profile':
+        return <ProfileScreen profile={profile} onProfile={async (nickname) => {
+          const next = await api.updateProfile(nickname)
+          applyProfile(next)
+          return next
+        }} onHistory={() => setScreen({ name: 'history' })}
+          onRecord={(recordId) => setScreen({ name: 'record', recordId })} />
       case 'mistakeBook':
         return <MistakeBookScreen state={mistakeBook} onState={setMistakeBook}
           onOpen={(fingerprint) => {
@@ -312,7 +335,7 @@ export default function Index() {
               pendingCount: Math.max(0, state.pendingCount + countDelta),
             }
           })}
-          onEvidence={setEvidence} />
+          onEvidence={setEvidence} onPractice={(attempt) => openMistakePractice(attempt, screen.fingerprint)} />
       case 'result':
       case 'record':
       case 'mistakes':
@@ -331,7 +354,7 @@ export default function Index() {
     }
   }
 
-  const tab = screen.name === 'home' || screen.name === 'history' || screen.name === 'mistakeBook'
+  const tab = screen.name === 'home' || screen.name === 'questionBank' || screen.name === 'mistakeBook' || screen.name === 'profile'
     ? screen.name
     : undefined
   const bodyHeight = Math.max(0, layout.windowHeight - layout.headerHeight - (tab ? layout.tabHeight + layout.safeBottom : 0))
@@ -359,7 +382,12 @@ export default function Index() {
     {confirmExit && <Sheet title='要退出这组练习？' onClose={() => setConfirmExit(false)}>
       <Text className='body-copy'>返回首页后可继续当前答题进度。</Text>
       <Action onClick={() => setConfirmExit(false)}>继续答题</Action>
-      <Action secondary onClick={() => { setConfirmExit(false); openHome() }}>退出练习</Action>
+      <Action secondary onClick={() => {
+        setConfirmExit(false)
+        if ((screen.name === 'quiz' || screen.name === 'feedback') && screen.practiceFingerprint) {
+          setScreen({ name: 'mistakeDetail', fingerprint: screen.practiceFingerprint })
+        } else openHome()
+      }}>退出练习</Action>
     </Sheet>}
   </View>
 }

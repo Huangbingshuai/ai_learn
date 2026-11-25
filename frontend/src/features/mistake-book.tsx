@@ -2,7 +2,7 @@ import { Button, Picker, Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { messageForError } from '../api/request'
-import type { AnswerReceipt, Evidence, Mistake } from '../api/types'
+import type { AnswerReceipt, Attempt, Evidence, Mistake } from '../api/types'
 import { Action, ComicRow, ErrorNote, StatusPanel, Tape } from '../components/comic'
 import { ReceiptView } from './quiz'
 import {
@@ -12,6 +12,7 @@ import {
   type MistakeBookState,
 } from './mistakes'
 import { formatCompletionDate } from './flow'
+import { makeKey } from './flow'
 
 export function MistakeBookScreen({ state, onState, onOpen }: {
   state: MistakeBookState
@@ -124,17 +125,20 @@ function MistakeBookFilters({ state, onState }: {
   </View>
 }
 
-export function MistakeDetailScreen({ fingerprint, onUpdated, onEvidence }: {
+export function MistakeDetailScreen({ fingerprint, onUpdated, onEvidence, onPractice }: {
   fingerprint: string
   onUpdated: (previous: Mistake, next: Mistake) => void
   onEvidence: (evidence: Evidence[]) => void
+  onPractice: (attempt: Attempt) => void
 }) {
   const [item, setItem] = useState<Mistake>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [practicePending, setPracticePending] = useState(false)
   const [reload, setReload] = useState(0)
   const requestId = useRef(0)
+  const practiceKey = useRef<string>()
 
   useEffect(() => {
     const currentRequest = ++requestId.current
@@ -169,6 +173,22 @@ export function MistakeDetailScreen({ fingerprint, onUpdated, onEvidence }: {
     }
   }
 
+  async function startPractice() {
+    if (practicePending) return
+    practiceKey.current ??= makeKey()
+    setPracticePending(true)
+    setError('')
+    try {
+      const attempt = await api.startMistakePractice(fingerprint, practiceKey.current)
+      practiceKey.current = undefined
+      onPractice(attempt)
+    } catch (problem) {
+      setError(messageForError(problem))
+    } finally {
+      setPracticePending(false)
+    }
+  }
+
   if (!item) return <StatusPanel title={loading ? '正在加载错题…' : '暂时无法查看这道题'}>
     {error && <ErrorNote>{error}</ErrorNote>}
     {error && <Action onClick={() => setReload((value) => value + 1)}>重新加载</Action>}
@@ -188,6 +208,9 @@ export function MistakeDetailScreen({ fingerprint, onUpdated, onEvidence }: {
     <ReceiptView receipt={receipt} onEvidence={onEvidence} />
     {error && <ErrorNote>{error}</ErrorNote>}
     <View className='actions'>
+      <Action disabled={practicePending} onClick={() => { void startPractice() }}>
+        {practicePending ? '正在准备…' : '再练一道'}
+      </Action>
       <Action secondary disabled={saving} onClick={() => { void toggleMastered() }}>
         {saving ? '正在保存…' : item.status === 'mastered' ? '重新加入待复习' : '标记为已掌握'}
       </Action>

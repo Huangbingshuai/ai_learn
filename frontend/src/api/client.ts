@@ -1,7 +1,7 @@
 import Taro from '@tarojs/taro'
 import { makeKey, prunePendingGenerations } from '../features/flow'
 import { createRequestClient, readResponse, RequestError, type RequestOptions, type Session } from './request'
-import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, Mistake, MistakePage, MistakeStatus, QuizGroup, RecordPage, TopicList, UserProfile } from './types'
+import type { AiSummary, AnswerReceipt, Attempt, BodyFor, GenerationJob, LearningRecord, Mistake, MistakePage, MistakeStatus, ProfileStats, QuizGroup, RecordPage, TopicList, UserProfile } from './types'
 
 const SESSION_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.session.dev.v1' : 'qingzhi.session.wechat.v1'
 const DEVICE_KEY = 'qingzhi.device.v1'
@@ -76,6 +76,7 @@ export const api = {
   updateProfile: (nickname: string | null) => request<UserProfile>({
     path: '/v1/me', method: 'PATCH', data: { nickname } satisfies BodyFor<'/v1/me', 'patch'>,
   }),
+  profileStats: () => request<ProfileStats>({ path: '/v1/me/stats' }),
   topics: (cursor?: string) => request<TopicList>({
     path: '/v1/topics' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
   }),
@@ -118,6 +119,9 @@ export const api = {
     path: `/v1/mistakes/${encodeURIComponent(fingerprint)}`,
     method: 'PATCH',
     data: { status } satisfies BodyFor<'/v1/mistakes/{fingerprint}', 'patch'>,
+  }),
+  startMistakePractice: (fingerprint: string, idempotencyKey: string) => request<Attempt>({
+    path: `/v1/mistakes/${encodeURIComponent(fingerprint)}/practice`, method: 'POST', idempotencyKey,
   }),
   retrySummary: (id: string, idempotencyKey: string) => request<AiSummary>({
     path: `/v1/records/${encodeURIComponent(id)}/ai-summary/retry`, method: 'POST', idempotencyKey,

@@ -4,6 +4,7 @@ import type { Mistake, MistakePage } from '../src/api/types'
 import {
   appendMistakePage,
   createMistakeBookState,
+  practiceFinished,
   mistakeBookViewState,
   setMistakeFilters,
   TAB_DESTINATIONS,
@@ -28,9 +29,9 @@ function page(items: Mistake[], nextCursor: string | null = null): MistakePage {
   return { items, nextCursor, pendingCount: 3, topics: [{ topicKey: 'seasons', title: '四季成因' }] }
 }
 
-test('adds the mistake book as a third bottom navigation tab', () => {
-  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'history', 'mistakeBook'])
-  assert.equal(TAB_DESTINATIONS[2].label, '错题本')
+test('shows learning, question bank, mistake book and profile in bottom navigation', () => {
+  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'questionBank', 'mistakeBook', 'profile'])
+  assert.deepEqual(TAB_DESTINATIONS.map(({ label }) => label), ['学习', '题库', '错题本', '我的'])
 })
 
 test('changing status or topic filters clears stale pages but keeps total and topic options', () => {
@@ -74,4 +75,10 @@ test('describes loading, errors, empty filters and populated lists separately', 
   assert.equal(mistakeBookViewState(empty, false, '网络错误'), 'error')
   assert.equal(mistakeBookViewState({ ...empty, loaded: true }, false, ''), 'empty')
   assert.equal(mistakeBookViewState({ ...empty, items: [mistake('a')] }, false, ''), 'list')
+})
+
+test('returns from single-question practice only after its answer is accepted', () => {
+  assert.equal(practiceFinished(0, 1), false)
+  assert.equal(practiceFinished(1, 1), true)
+  assert.equal(practiceFinished(2, 1), true)
 })

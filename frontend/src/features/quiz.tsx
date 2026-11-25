@@ -7,6 +7,7 @@ import happy from '../assets/student-happy.webp'
 import surprised from '../assets/student-wow.webp'
 import { Action, ComicRow, ErrorNote, Tape } from '../components/comic'
 import { optionAppearance, questionTypeLabels, selectOption } from './flow'
+import { practiceFinished } from './mistakes'
 
 export type ActiveAttempt = Attempt & { question: Question }
 
@@ -157,13 +158,15 @@ export function ReceiptView({ receipt, onEvidence }: { receipt: AnswerReceipt; o
   </>
 }
 
-export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult, onRegenerate }: {
+export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult, onRegenerate, practiceFingerprint, onPracticeFinished }: {
   attempt: ActiveAttempt
   receipt: AnswerReceipt
   onEvidence: (evidence: Evidence[]) => void
   onOpen: (attempt: Attempt) => void
   onResult: (recordId: string) => void
   onRegenerate: () => void
+  practiceFingerprint?: string
+  onPracticeFinished?: () => void
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -177,6 +180,10 @@ export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult,
   }, [])
 
   async function proceed() {
+    if (practiceFingerprint && practiceFinished(receipt.answeredCount, receipt.totalQuestions)) {
+      onPracticeFinished?.()
+      return
+    }
     if (receipt.recordId) {
       onResult(receipt.recordId)
       return
@@ -207,7 +214,9 @@ export function FeedbackScreen({ attempt, receipt, onEvidence, onOpen, onResult,
     <View className='quiz-actions'>
       {error && <ErrorNote>{error}</ErrorNote>}
       {unavailable ? <Action onClick={onRegenerate}>重新生成题组</Action> : <Action disabled={pending} onClick={() => { void proceed() }}>
-        {receipt.recordId ? '查看通关结果' : pending ? '正在加载…' : '下一题'}
+        {practiceFingerprint && practiceFinished(receipt.answeredCount, receipt.totalQuestions)
+          ? '返回错题详情'
+          : receipt.recordId ? '查看通关结果' : pending ? '正在加载…' : '下一题'}
       </Action>}
     </View>
   </>

@@ -39,6 +39,23 @@ export interface paths {
         patch: operations["update_profile_v1_me_patch"];
         trace?: never;
     };
+    "/v1/me/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile Stats */
+        get: operations["get_profile_stats_v1_me_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mistakes": {
         parameters: {
             query?: never;
@@ -565,6 +582,17 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ProfileStats */
+        ProfileStats: {
+            /** Completedsets */
+            completedSets: number;
+            /** Answeredquestions */
+            answeredQuestions: number;
+            /** Correctanswers */
+            correctAnswers: number;
+            /** Accuracypercent */
+            accuracyPercent: number;
+        };
         /** ProfileUpdate */
         ProfileUpdate: {
             /** Nickname */
@@ -870,6 +898,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    get_profile_stats_v1_me_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileStats"];
                 };
             };
             /** @description Unauthorized */

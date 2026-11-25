@@ -14,6 +14,7 @@ export type BodyFor<P extends keyof paths, M extends keyof paths[P]> = paths[P][
 
 export type Session = For<'/v1/auth/wechat', 'post'>
 export type UserProfile = For<'/v1/me', 'get'>
+export type ProfileStats = For<'/v1/me/stats', 'get'>
 
 export type TopicList = For<'/v1/topics', 'get'>
 export type Topic = TopicList['items'][number]
