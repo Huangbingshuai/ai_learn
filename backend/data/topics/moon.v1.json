@@ -1,0 +1,108 @@
+{
+  "topicKey": "moon",
+  "title": "月相变化",
+  "art": "moon",
+  "aliases": ["月相", "月亮的变化", "月亮为什么会变圆", "月相是怎么形成的", "为什么会有月相", "月亮圆缺"],
+  "version": "v1",
+  "evidence": [
+    {
+      "evidenceId": "moon-light",
+      "text": "平时的月光主要是月面反射的太阳光。普通月相中，阳光照亮月球朝向太阳的约一半；随着月球绕地球运行，从地球看到的受光面比例不断改变。即使可见的亮面只是细细一弯，月球本身仍然完整。",
+      "sourceTitle": "Top Moon Questions",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/top-moon-questions/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于月光来源、月球受光和可见亮面"
+    },
+    {
+      "evidenceId": "moon-order",
+      "text": "常用的八个月相按顺序是新月、娥眉月、上弦月、盈凸月、满月、亏凸月、下弦月和残月，之后再次回到新月。新月到满月，可见亮面逐渐增大；满月到下一次新月，可见亮面逐渐缩小。娥眉月和残月的可见亮面少于一半，盈凸月和亏凸月的可见亮面多于一半。",
+      "sourceTitle": "Moon Phases",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/moon-phases/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于八个月相的顺序、盈亏和亮面比例"
+    },
+    {
+      "evidenceId": "moon-geometry",
+      "text": "新月时，从地球看月球与太阳的方向接近，月球的受光面主要背向地球；满月时月球大致在太阳的相反方向，从地球能看到接近完整的亮圆。上弦月与下弦月时，从地球看月球和太阳的方向大致相隔 90°，可见月面约有一半显亮。",
+      "sourceTitle": "Moon Phases",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/moon-phases/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于用日地月位置解释新月、弦月和满月"
+    },
+    {
+      "evidenceId": "moon-eclipse",
+      "text": "月食时，太阳、地球、月球在满月阶段排列得足够接近一条直线，月球穿过地球的影子。月球绕地球运行的轨道面与地球绕太阳公转的轨道面约有 5° 夹角，大多数满月时月球会从地球影子的上方或下方经过。普通月相体现地球观测者看到的月球受光面比例。",
+      "sourceTitle": "The Moon & Eclipses",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/eclipses/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于月食的阴影、相位和轨道条件"
+    },
+    {
+      "evidenceId": "moon-cycle",
+      "text": "从一次新月到下一次新月的平均间隔约为 29.5 天。这段时间内可见亮面经历一轮由少到多、再由多到少的变化。以远处恒星为参照，月球绕地球一周约需 27.3 天。月相周期对应的是月球再次到达相对于地球和太阳的相同位置关系。",
+      "sourceTitle": "Moon Phases",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/moon-phases/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于月相周期与月球公转周期的参照对象"
+    },
+    {
+      "evidenceId": "moon-perspective",
+      "text": "在同一时刻，凡是能看到月亮的地方，看到的月相基本相同。不同地点以各自的地平线和竖直方向为参照，亮区的朝向可能不同。例如南北半球的观测者可以看到相同的残月，而亮弧在他们各自的视野中出现在不同一侧。",
+      "sourceTitle": "Top Moon Questions",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/top-moon-questions/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于同一月相的异地观测和亮区方向"
+    },
+    {
+      "evidenceId": "moon-rise-times",
+      "text": "按通常的观测规律，满月在日落前后升起、日出前后落下。上弦月在中午前后升起、半夜前后落下。下弦月在半夜前后升起、中午前后落下。这些时间用于比较典型月相的可见时段，实际月出月落随日期及地点变化。",
+      "sourceTitle": "Moon Phases",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/moon-phases/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于按月相比较典型观测时段"
+    },
+    {
+      "evidenceId": "moon-visibility",
+      "text": "地球自转让各地观测者陆续看到月亮升出地平线或落下。由于月球每天还沿轨道移动一段，月出和月落的时刻也逐日变化。当月亮在当地地平线上方，白天有时也能看到月亮，天空的亮度和能见度会影响观测。",
+      "sourceTitle": "Top Moon Questions",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/top-moon-questions/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于月亮升落、白天见月和当地观测条件"
+    },
+    {
+      "evidenceId": "moon-earthshine",
+      "text": "在细弯月阶段，有时能看到亮弧之外的月面发出微光。这种地照来自太阳光先被地球反射，再照到月球朝向我们的夜面。明亮的弯月部分主要受到太阳直接照射。",
+      "sourceTitle": "Moon Phases",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/moon-phases/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于辨别弯月亮弧和地照产生的微光"
+    },
+    {
+      "evidenceId": "moon-rotation",
+      "text": "月球相对于远处恒星自转一周所用的时间，与它绕地球公转一周的时间大致相同。因此我们平时总看到月球大致同一面。面向地球的一侧和背向地球的一侧都会交替经历日照和黑夜。",
+      "sourceTitle": "Top Moon Questions",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/top-moon-questions/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于同步自转、月球正背面及其受光"
+    },
+    {
+      "evidenceId": "moon-eclipse-types",
+      "text": "月球完全进入地球本影时会出现月全食。只有一部分月面进入本影时会出现月偏食。月球只掠过地球较暗淡的外层阴影时，会出现半影月食，月亮的亮度通常只略微下降。",
+      "sourceTitle": "The Moon & Eclipses",
+      "sourceOrganization": "NASA Science",
+      "sourceUrl": "https://science.nasa.gov/moon/eclipses/",
+      "verifiedAt": "2026-11-25",
+      "usageScope": "中文科普转述，适用于区别不同月食的受影范围"
+    }
+  ]
+}

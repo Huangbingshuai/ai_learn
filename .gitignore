@@ -3,3 +3,13 @@
 .env.*
 !.env.example
 node_modules/
+
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+frontend/dist/
+frontend/project.private.config.json
+frontend/project.local.config.json
