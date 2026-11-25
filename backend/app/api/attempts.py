@@ -275,7 +275,7 @@ def _save_completed_record(
         RecordSummary(
             record_id=record_id,
             status="QUEUED",
-            model_name=settings.deepseek_model,
+            model_name=settings.ai_model,
             rules_version=SUMMARY_RULES_VERSION,
             created_at=now,
             next_run_at=now,

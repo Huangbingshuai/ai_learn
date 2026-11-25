@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     wechat_app_secret: SecretStr = SecretStr("")
     wechat_timeout: float = Field(default=8, gt=0)
     login_limit: int = Field(default=60, gt=0)
+    ai_provider: Literal["qwen", "deepseek"] = "qwen"
+    dashscope_api_key: SecretStr = SecretStr("")
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    qwen_model: str = "qwen-flash"
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_model: str = "deepseek-flash"
     tavily_api_key: SecretStr = SecretStr("")
@@ -27,3 +31,8 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = Field(default=1, gt=0)
     max_generation_calls: int = Field(default=7, ge=4)
     max_summary_calls: int = Field(default=4, ge=2)
+
+    @property
+    def ai_model(self) -> str:
+        """The model recorded with generated jobs and summaries."""
+        return self.qwen_model if self.ai_provider == "qwen" else self.deepseek_model

@@ -1,4 +1,4 @@
-"""PostgreSQL task leases and durable DeepSeek call budgets."""
+"""PostgreSQL task leases and durable model call budgets."""
 
 import logging
 from collections.abc import Callable
@@ -35,7 +35,7 @@ from app.domain.topics import (
     normalize,
 )
 from app.quota import QuotaReached, reserve_summary_quota
-from app.worker.ai import AIError, DeepSeekAI
+from app.worker.ai import AIError, ChatAI
 from app.worker.search import MIN_PASSAGES, TavilySearch
 
 logger = logging.getLogger(__name__)
@@ -63,10 +63,27 @@ def _deadline_error() -> AIError:
     return AIError("PROVIDER_TIMEOUT", "任务处理超时。", True)
 
 
-def _validation_issues(error: ValueError) -> list[str]:
+def _issue_label(location: tuple[int | str, ...], raw: dict) -> str:
+    if not location:
+        return "题组"
+    if location[0] == "questions" and len(location) > 1 and isinstance(location[1], int):
+        questions = raw.get("questions") if isinstance(raw, dict) else None
+        if isinstance(questions, list) and 0 <= location[1] < len(questions):
+            question = questions[location[1]]
+            if isinstance(question, dict) and isinstance(question.get("questionId"), str):
+                return question["questionId"]
+        return f"questions.{location[1]}"
+    if location[0] == "takeaways":
+        return "知识要点"
+    if location[0] == "title":
+        return "标题"
+    return ".".join(map(str, location))
+
+
+def _validation_issues(error: ValueError, raw: dict) -> list[str]:
     if isinstance(error, ValidationError):
         return [
-            f"{'.'.join(map(str, item['loc'])) or 'quiz'}: {item['msg']}"
+            f"{_issue_label(item['loc'], raw)}: {item['msg']}"
             for item in error.errors(include_url=False, include_context=False, include_input=False)[
                 :12
             ]
@@ -97,7 +114,7 @@ class Worker:
         self,
         settings: Settings,
         sessions: sessionmaker[Session],
-        ai: DeepSeekAI,
+        ai: ChatAI,
         search: TavilySearch | None = None,
     ):
         self.settings = settings
@@ -230,7 +247,7 @@ class Worker:
                     ) from None
                 if row.pending_manual_retry:
                     row.retry_count += 1
-            row.model_name = self.settings.deepseek_model
+            row.model_name = self.settings.ai_model
             row.call_count += 1
             row.lease_until = min(utcnow() + self.lease_duration, row.expires_at)
         return operation(*args)
@@ -444,7 +461,7 @@ class Worker:
         try:
             quiz = validate_quiz(raw, topic).model_dump(mode="json", by_alias=True)
         except ValueError as error:
-            return None, _validation_issues(error)
+            return None, _validation_issues(error, raw)
         verdict = self._model_call(claim, self.ai.review, topic, quiz, phase="VERIFYING")
         if not verdict["accepted"]:
             return quiz, verdict["issues"] or ["事实核验未通过"]

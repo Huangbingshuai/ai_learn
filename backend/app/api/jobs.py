@@ -185,7 +185,7 @@ def create_job(
                 next_run_at=now,
                 created_at=now,
                 expires_at=now + timedelta(minutes=settings.job_minutes),
-                model_name=settings.deepseek_model,
+                model_name=settings.ai_model,
                 rules_version=RULES_VERSION,
             )
             .on_conflict_do_nothing(constraint="uq_generation_idempotency")
