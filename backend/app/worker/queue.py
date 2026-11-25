@@ -69,6 +69,8 @@ def _clear_lease(row: Task) -> None:
     row.lease_until = None
     if isinstance(row, GenerationJob):
         row.phase = None
+        if row.status in {"SUCCEEDED", "FAILED"}:
+            row.checkpoint = None
 
 
 def _succeed(row: Task) -> None:
@@ -213,14 +215,23 @@ class Worker:
             row = self._owned(session, claim)
             assert isinstance(row, GenerationJob)
             topic_key, topic_version = row.topic_key, row.topic_version
+            checkpoint = row.checkpoint
+            repair_started = row.repaired
         try:
             topic = get_topic_version(topic_key, topic_version)
         except ValueError:
             raise AIError("SOURCE_INSUFFICIENT", "当前主题的资料无法支持出题。", False) from None
 
-        raw = self._model_call(claim, self.ai.generate, topic, slots_needed=2)
+        if checkpoint is None:
+            raw = self._model_call(claim, self.ai.generate, topic, slots_needed=2)
+            self._save_candidate(claim, raw, corrected=False)
+        else:
+            if repair_started and not checkpoint["corrected"]:
+                raise _deadline_error()
+            raw = checkpoint["candidate"]
+
         quiz, issues = self._validate_candidate(claim, topic, raw)
-        if issues:
+        if issues and not repair_started:
             repaired = self._model_call(
                 claim,
                 self.ai.repair,
@@ -230,6 +241,7 @@ class Worker:
                 slots_needed=2,
                 repair=True,
             )
+            self._save_candidate(claim, repaired, corrected=True)
             quiz, issues = self._validate_candidate(claim, topic, repaired)
         if issues or quiz is None:
             raise _quality_error()
@@ -259,6 +271,12 @@ class Worker:
                 )
             )
             _succeed(row)
+
+    def _save_candidate(self, claim: _Claim, candidate: dict, *, corrected: bool) -> None:
+        with self.sessions.begin() as session:
+            row = self._owned(session, claim, lock=True)
+            assert isinstance(row, GenerationJob)
+            row.checkpoint = {"candidate": candidate, "corrected": corrected}
 
     def _validate_candidate(
         self, claim: _Claim, topic: dict, raw: dict
@@ -298,11 +316,19 @@ class Worker:
         try:
             with self.sessions.begin() as session:
                 row = self._owned(session, claim, lock=True)
-                needed = 2 if isinstance(row, GenerationJob) else 1
+                needed = 1
+                can_resume = True
+                if isinstance(row, GenerationJob):
+                    checkpoint = row.checkpoint
+                    needed = 2 if checkpoint is None else 1
+                    if checkpoint is not None and row.repaired and not checkpoint["corrected"]:
+                        # A dispatched correction is never sent to the provider a second time.
+                        can_resume = False
                 delay = timedelta(seconds=2 ** min(max(row.call_count, 1), 5))
                 next_run_at = utcnow() + delay
                 schedule = (
                     error.retryable
+                    and can_resume
                     and error.code not in {"GENERATION_QUALITY_FAILED", "RATE_LIMITED"}
                     and row.call_count + needed <= self._call_limit(row)
                     and next_run_at < row.expires_at

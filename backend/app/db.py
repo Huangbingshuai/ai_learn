@@ -90,6 +90,7 @@ class GenerationJob(Base):
     call_count: Mapped[int] = mapped_column(Integer, default=0)
     lease_count: Mapped[int] = mapped_column(Integer, default=0)
     repaired: Mapped[bool] = mapped_column(Boolean, default=False)
+    checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     error_code: Mapped[str | None] = mapped_column(String(48))
     error_message: Mapped[str | None] = mapped_column(String(512))
     error_retryable: Mapped[bool] = mapped_column(Boolean, default=False)

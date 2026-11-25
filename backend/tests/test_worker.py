@@ -384,3 +384,46 @@ def test_summary_day_quota_binds_real_model_calls_and_keeps_basic_result(
         )
         assert blocked.error_retryable
         assert session.get(db.Record, second).correct_count == 20
+
+
+def test_review_timeout_resumes_repaired_candidate_with_one_call_left(
+    worker_module, database, settings, quiz
+):
+    settings = settings.model_copy(update={"max_generation_calls": 5})
+    job_id = queue_generation(database, settings)
+
+    class ReviewTimeout(FakeAI):
+        def review(self, topic, candidate):
+            self.calls.append(("review", candidate["title"]))
+            if candidate["title"] != "修正题组":
+                return {"accepted": False, "issues": ["需要修正"]}
+            if self.calls.count(("review", "修正题组")) == 1:
+                raise AIError("PROVIDER_TIMEOUT", "核验超时", retryable=True)
+            return {"accepted": True, "issues": []}
+
+        def repair(self, topic, candidate, issues):
+            self.calls.append("repair")
+            return {**quiz, "title": "修正题组"}
+
+    model = ReviewTimeout(quiz=quiz)
+    assert worker_module.Worker(settings, database, model).process_once()
+    with database.begin() as session:
+        job = session.get(db.GenerationJob, job_id)
+        assert job.status == "QUEUED"
+        assert job.call_count == 4
+        job.next_run_at = db.utcnow()
+
+    assert worker_module.Worker(settings, database, model).process_once()
+    with database() as session:
+        job = session.get(db.GenerationJob, job_id)
+        assert (job.status, job.call_count, job.repaired) == ("SUCCEEDED", 5, True)
+        assert job.checkpoint is None
+        stored = session.scalar(select(db.Quiz).where(db.Quiz.job_id == job_id))
+        assert stored.content["title"] == "修正题组"
+    assert model.calls == [
+        "generate",
+        ("review", quiz["title"]),
+        "repair",
+        ("review", "修正题组"),
+        ("review", "修正题组"),
+    ]
