@@ -132,8 +132,60 @@ def test_first_submission_is_locked_and_returns_sources(client, play, fixed_data
     assert first["explanation"]
     response = choose(client, headers, aid, qid, ["o2"]).json()
     assert response == first
+    assert first["coinDelta"] == 10
+    assert first["coinBalance"] == 10
     next_question = client.get(f"/v1/attempts/{aid}", headers=headers).json()["question"]
     assert next_question["index"] == 1
+
+
+def test_coins_are_settled_once_per_user_and_question_across_attempts(
+    client, play, fixed_data, database
+):
+    from app.db import Quiz
+
+    headers, quiz_id, attempt = play
+    first = fixed_data["questions"][0]
+    good = choose(
+        client, headers, attempt["attemptId"], first["questionId"], first["correctOptionIds"]
+    )
+    assert (good.json()["coinDelta"], good.json()["coinBalance"]) == (10, 10)
+
+    with database.begin() as db:
+        quiz = db.get(Quiz, quiz_id)
+        content = quiz.content.copy()
+        content["questions"] = [
+            dict(first, questionId="renamed-semantic-question"),
+            *content["questions"][1:],
+        ]
+        quiz.content = content
+
+    restarted = client.post(
+        "/v1/attempts",
+        json={"quizId": quiz_id},
+        headers={**headers, "Idempotency-Key": "second-attempt"},
+    ).json()
+    wrong = next(
+        option["optionId"]
+        for option in first["options"]
+        if option["optionId"] not in first["correctOptionIds"]
+    )
+    duplicate = choose(
+        client, headers, restarted["attemptId"], restarted["question"]["questionId"], [wrong]
+    ).json()
+    assert (duplicate["coinDelta"], duplicate["coinBalance"]) == (0, 10)
+    assert client.get("/v1/me", headers=headers).json()["coinBalance"] == 10
+
+
+def test_wrong_answer_at_zero_does_not_create_negative_balance(client, play, fixed_data):
+    headers, _, attempt = play
+    question = fixed_data["questions"][0]
+    wrong = next(
+        option["optionId"]
+        for option in question["options"]
+        if option["optionId"] not in question["correctOptionIds"]
+    )
+    receipt = choose(client, headers, attempt["attemptId"], question["questionId"], [wrong]).json()
+    assert (receipt["coinDelta"], receipt["coinBalance"]) == (0, 0)
 
 
 @pytest.mark.parametrize("complete_set", [True, False])

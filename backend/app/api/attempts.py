@@ -1,4 +1,7 @@
+import json
+import unicodedata
 from datetime import datetime, timedelta
+from hashlib import sha256
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -12,10 +15,12 @@ from app.api.errors import ApiError, ErrorView, not_found
 from app.db import (
     Attempt,
     AttemptAnswer,
+    CoinSettlement,
     GenerationJob,
     Quiz,
     Record,
     RecordSummary,
+    User,
     new_id,
     utcnow,
 )
@@ -271,7 +276,52 @@ class AnswerReceipt(BaseModel):
     evidence: list[EvidenceView]
     answeredCount: int
     totalQuestions: int
+    coinDelta: int = 0
+    coinBalance: int = 0
     recordId: str | None = None
+
+
+def _normalized_question_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _question_fingerprint(question: dict) -> str:
+    identity = {
+        "type": question["type"],
+        "stem": _normalized_question_text(question["stem"]),
+        "options": sorted(
+            _normalized_question_text(option["text"]) for option in question["options"]
+        ),
+    }
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tuple[int, int]:
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    if user is None:
+        raise not_found()
+    fingerprint = _question_fingerprint(question)
+    previous = db.scalar(
+        select(CoinSettlement).where(
+            CoinSettlement.user_id == user_id,
+            CoinSettlement.question_fingerprint == fingerprint,
+        )
+    )
+    if previous is not None:
+        return 0, user.coin_balance
+    delta = 10 if is_correct else max(-5, -user.coin_balance)
+    user.coin_balance += delta
+    db.add(
+        CoinSettlement(
+            user_id=user_id,
+            question_fingerprint=fingerprint,
+            is_correct=is_correct,
+            coin_delta=delta,
+            created_at=utcnow(),
+        )
+    )
+    return delta, user.coin_balance
 
 
 def _save_completed_record(
@@ -366,6 +416,11 @@ def submit_answer(
             ],
             answeredCount=attempt.answered_count,
             totalQuestions=len(questions),
+            coinDelta=0,
+            coinBalance=0,
+        )
+        receipt.coinDelta, receipt.coinBalance = _settle_coins(
+            db, user_id, question, receipt.isCorrect
         )
         if attempt.answered_count == len(questions):
             attempt.status = "PASSED"
