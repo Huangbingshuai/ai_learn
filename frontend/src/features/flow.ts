@@ -1,5 +1,28 @@
+import type { PendingGeneration } from '../api/client'
+
 export const FIRST_POLL_DELAY = 2000
 export const RESTART_CUTOFF_MS = 30 * 60 * 1000
+export const PENDING_AGE = 24 * 60 * 60 * 1000
+export const PENDING_UNSUBMITTED_AGE = 10 * 60 * 1000
+
+export function pendingIdentity(entry: PendingGeneration): string {
+  return 'topicKey' in entry.input
+    ? `key:${entry.input.topicKey}`
+    : `topic:${entry.input.topic.trim().replace(/\s+/g, ' ').toLowerCase()}`
+}
+
+export function prunePendingGenerations(entries: PendingGeneration[], now = Date.now()): PendingGeneration[] {
+  const seen = new Set<string>()
+  return entries
+    .filter((entry) => entry.requestedAt > now - PENDING_AGE && entry.status !== 'FAILED')
+    .sort((left, right) => right.requestedAt - left.requestedAt)
+    .filter((entry) => {
+      const identity = pendingIdentity(entry)
+      if (seen.has(identity)) return false
+      seen.add(identity)
+      return true
+    })
+}
 
 export const questionTypeLabels = { single: '单选题', multi: '多选题', judge: '判断题' }
 

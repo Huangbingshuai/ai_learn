@@ -1,14 +1,14 @@
 import { ScrollView, Text, View } from '@tarojs/components'
 import { useDidHide, useDidShow } from '@tarojs/taro'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  readPendingGenerations, readRestartGroup, savePendingGenerations, saveRestartGroup,
+  api, readPendingGenerations, readRestartGroup, savePendingGenerations, saveRestartGroup,
   type PendingGeneration, type RestartGroup, type TopicInput,
 } from '../../api/client'
 import { RequestError } from '../../api/request'
 import type { AnswerReceipt, Attempt, Evidence, LearningRecord } from '../../api/types'
 import { Action, EvidenceSheet, Header, Sheet, Tabs, getWindowLayout } from '../../components/comic'
-import { makeKey, restartAvailable } from '../../features/flow'
+import { makeKey, PENDING_UNSUBMITTED_AGE, pendingIdentity, prunePendingGenerations, restartAvailable } from '../../features/flow'
 import { GenerationScreen, type GenerationIntent } from '../../features/generation'
 import { HomeScreen } from '../../features/home'
 import { FeedbackScreen, QuizScreen, type ActiveAttempt } from '../../features/quiz'
@@ -54,6 +54,7 @@ export default function Index() {
   useDidShow(() => {
     setLayout(getWindowLayout())
     setVisible(true)
+    void reconcilePending()
   })
   useDidHide(() => setVisible(false))
 
@@ -94,6 +95,55 @@ export default function Index() {
     updatePending((entries) => entries.filter((entry) => entry.key !== key))
   }
 
+  const reconciling = useRef(false)
+  async function reconcilePending() {
+    if (reconciling.current) return
+    reconciling.current = true
+    try {
+      const entries = prunePendingGenerations(pendingRef.current)
+      if (!entries.length) {
+        if (pendingRef.current.length) updatePending(() => entries)
+        return
+      }
+      const results = new Map<string, {
+        drop: boolean
+        status?: PendingGeneration['status']
+        phase?: PendingGeneration['phase']
+      }>()
+      await Promise.all(entries.map(async (entry) => {
+        if (!entry.jobId) {
+          if (Date.now() - entry.requestedAt > PENDING_UNSUBMITTED_AGE) {
+            results.set(entry.key, { drop: true })
+          }
+          return
+        }
+        try {
+          const job = await api.job(entry.jobId)
+          if (job.status === 'FAILED') results.set(entry.key, { drop: true })
+          else results.set(entry.key, { drop: false, status: job.status, phase: job.phase })
+        } catch (problem) {
+          if (problem instanceof RequestError && problem.status === 404) {
+            results.set(entry.key, { drop: true })
+          }
+        }
+      }))
+      updatePending((current) => prunePendingGenerations(current
+        .filter((entry) => !results.get(entry.key)?.drop)
+        .map((entry) => {
+          const result = results.get(entry.key)
+          return result && !result.drop
+            ? { ...entry, status: result.status, phase: result.phase }
+            : entry
+        })))
+    } finally {
+      reconciling.current = false
+    }
+  }
+
+  useEffect(() => {
+    if (screen.name === 'home') void reconcilePending()
+  }, [screen.name])
+
   function openGeneration(intent: PendingGeneration) {
     setScreen({ name: 'generation', intent })
   }
@@ -104,7 +154,10 @@ export default function Index() {
     const intent: PendingGeneration = {
       kind: 'generate', input: topicInput, title: topic, key: makeKey(), requestedAt: Date.now(),
     }
-    updatePending((entries) => [intent, ...entries].slice(0, 20))
+    updatePending((entries) => prunePendingGenerations([
+      intent,
+      ...entries.filter((entry) => pendingIdentity(entry) !== pendingIdentity(intent)),
+    ]).slice(0, 20))
     openGeneration(intent)
   }
 
@@ -164,6 +217,7 @@ export default function Index() {
           }}
           onJobId={(jobId) => updatePending((entries) =>
             entries.map((entry) => entry.key === intent.key ? { ...entry, jobId } : entry))}
+          onFailed={() => { if (intent.kind === 'generate') forgetPending(intent.key) }}
           onStartAgain={() => {
             if (intent.kind === 'fixed') launchFixed()
             else if (intent.kind === 'restart') launchGeneration(intent.group.topicTitle)

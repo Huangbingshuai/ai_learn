@@ -85,7 +85,7 @@
 .h3 { margin: 0 0 5px; font-size: 15px; }
 .body-copy { display: block; margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
 
-.comic-cover { position: relative; color: var(--ink); background: var(--warm); }
+.comic-cover { position: relative; margin-top: 14px; color: var(--ink); background: var(--warm); }
 .cover-art { display: block; width: 100%; }
 .cover-title {
   position: absolute;
@@ -206,8 +206,24 @@
 .topic-arrow { margin-left: auto; font-size: 18px; line-height: 1; }
 .topic-load-error .action { margin-top: 9px; }
 .topic-load-more { margin-top: 12px; }
-.restart-card { margin: 4px 0 10px; padding: 10px 11px; border: 1px solid var(--ink); background: var(--sky); }
-.restart-card .body-copy { font-size: 13px; }
+.home-continue { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 0; }
+.continue-row {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ink);
+  background: var(--white);
+  box-shadow: 2px 2px var(--ink);
+  text-align: left;
+}
+.continue-row.is-restart { background: var(--sky); }
+.continue-copy { flex: 1; min-width: 0; }
+.continue-title { display: block; font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
+.continue-meta { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.continue-arrow { flex: none; color: var(--blue); font-size: 18px; font-weight: 900; }
 
 .action {
   position: relative;

@@ -5,7 +5,7 @@ import { messageForError } from '../api/request'
 import type { Topic } from '../api/types'
 import cover from '../assets/cover.webp'
 import { Action, ErrorNote } from '../components/comic'
-import { RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
+import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
 
 export function HomeScreen({
   input, error, restart, pending, onEdit, onError, onGenerate, onTopic, onPending, onFixedQuiz, onRestart,
@@ -76,25 +76,6 @@ export function HomeScreen({
   }
 
   return <>
-    {pending.map((intent) => <View className='restart-card' key={intent.key}>
-      <Text className='body-copy'>{intent.title}</Text>
-      <Action secondary onClick={() => onPending(intent)}>查看出题进度</Action>
-    </View>)}
-    {restart && <View className='restart-card'>
-      <Text className='body-copy'>{canRestart ? `可以从第 1 题重新开始「${restart.topicTitle}」。` : '上次的题组即将到期，请重新生成。'}</Text>
-      <Action secondary onClick={() => onRestart(restart)}>{canRestart ? '从第 1 题开始' : '重新生成题组'}</Action>
-    </View>}
-    <View className='comic-cover'>
-      <Image className='cover-art' src={cover} mode='widthFix' aria-label='翻开的书里跳出一颗地球，戴眼镜的学生在旁边发问' />
-      <View className='cover-title'>
-        <Text>今天想弄懂</Text>
-        <Text className='cover-emphasis'>什么？</Text>
-      </View>
-      <View className='cover-dialogue'>
-        <Text>地球忘带</Text>
-        <Text>校服啦？</Text>
-      </View>
-    </View>
     <Text className='home-caption'>一组 20 道题，每题都有讲解</Text>
     <View className='topic-form'>
       <View className='topic-field'>
@@ -114,6 +95,48 @@ export function HomeScreen({
       </View>
       {error && <ErrorNote>{error}</ErrorNote>}
       <Action onClick={submitTopic}>生成练习</Action>
+    </View>
+    {(pending.length > 0 || restart) && <View className='home-continue'>
+      {pending.map((intent) => <Button
+        className='continue-row ui-button'
+        hoverClass='press-offset'
+        key={intent.key}
+        onClick={() => onPending(intent)}
+      >
+        <View className='continue-copy'>
+          <Text className='continue-title'>{intent.title}</Text>
+          <Text className='continue-meta'>
+            {intent.status === 'SUCCEEDED'
+              ? '题组已生成，去答题'
+              : intent.phase ? generationPhases[intent.phase] : '正在出题'}
+          </Text>
+        </View>
+        <Text className='continue-arrow' aria-hidden>›</Text>
+      </Button>)}
+      {restart && <Button
+        className='continue-row is-restart ui-button'
+        hoverClass='press-offset'
+        onClick={() => onRestart(restart)}
+      >
+        <View className='continue-copy'>
+          <Text className='continue-title'>{restart.topicTitle}</Text>
+          <Text className='continue-meta'>
+            {canRestart ? '可以从第 1 题重新开始' : '题组即将到期，重新生成'}
+          </Text>
+        </View>
+        <Text className='continue-arrow' aria-hidden>›</Text>
+      </Button>}
+    </View>}
+    <View className='comic-cover'>
+      <Image className='cover-art' src={cover} mode='widthFix' aria-label='翻开的书里跳出一颗地球，戴眼镜的学生在旁边发问' />
+      <View className='cover-title'>
+        <Text>今天想弄懂</Text>
+        <Text className='cover-emphasis'>什么？</Text>
+      </View>
+      <View className='cover-dialogue'>
+        <Text>地球忘带</Text>
+        <Text>校服啦？</Text>
+      </View>
     </View>
     <View className='topic-picker'>
       <Text className='h2'>已保存主题</Text>
