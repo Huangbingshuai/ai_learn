@@ -92,6 +92,22 @@ def test_generated_quiz_must_be_valid_and_grounded(tamper):
         validate_quiz(raw, topics.get_topic_version("seasons", "v1"))
 
 
+def test_quiz_validation_keeps_legacy_twenty_question_sets_readable():
+    raw = deepcopy(topics.load_fixed_quiz())
+    source = topics.get_topic_version("seasons", "v1")
+    while len(raw["questions"]) < 20:
+        index = len(raw["questions"])
+        question = deepcopy(raw["questions"][index % 12])
+        question["questionId"] = f"legacy-{index + 1}"
+        question["stem"] += f"（旧题组 {index + 1}）"
+        raw["questions"].append(question)
+    assert len(validate_quiz(raw, source).questions) == 20
+
+    raw["questions"].pop()
+    with pytest.raises(ValueError):
+        validate_quiz(raw, source)
+
+
 def test_seed_topics_open_saved_quiz_without_generation(client, login, database):
     from app.db import Quiz
 

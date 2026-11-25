@@ -27,7 +27,7 @@ function jobFailure(job: GenerationJob): Failure {
     return { title: '这组练习已到期', description: issue.message, retry, requestId: issue.requestId }
   }
   if (issue?.code === 'SOURCE_INSUFFICIENT') {
-    return { title: '这个主题的依据不足', description: '找到的资料还支撑不了 20 道有依据的题。可以缩小范围或换个主题。', retry, requestId: issue.requestId }
+    return { title: '这个主题的依据不足', description: '找到的资料还支撑不了 12 道有依据的题。可以缩小范围或换个主题。', retry, requestId: issue.requestId }
   }
   if (issue?.code === 'TOPIC_NEEDS_CLARIFICATION') {
     return { title: '想了解哪一部分？', description: issue.message, retry, requestId: issue.requestId }
@@ -178,7 +178,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
       <View className='manifest-title'>
         {failure ? <Text>{failure.title}</Text> : <>
           <Text>{live ? '正在准备' : '正在打开'}</Text>
-          <Text className='manifest-emphasis'>{live ? '你的 20 道题' : '这组练习'}</Text>
+          <Text className='manifest-emphasis'>{live ? '你的 12 道题' : '这组练习'}</Text>
         </>}
       </View>
       <View className='spot' aria-hidden />

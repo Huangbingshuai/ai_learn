@@ -238,7 +238,7 @@ def test_quiz_methods_send_one_evidence_bound_json_request(provider, topic, capl
     assert request["max_tokens"] >= 6000
     assert "max_completion_tokens" not in request
     assert "tools" not in request
-    assert "20" in request["messages"][0]["content"]
+    assert "12" in request["messages"][0]["content"]
     data = json.loads(request["messages"][1]["content"])
     assert data["topic"]["evidence"] == [{"evidenceId": "e1", "text": "月球反射太阳光。"}]
     if task == "repair":
@@ -471,3 +471,19 @@ def test_summary_rejects_wrong_field_types(ai_module, provider, record):
 
     assert raised.value.code == "PROVIDER_INVALID_OUTPUT"
     assert len(requests) == 1
+
+
+def test_summary_normalizes_single_citation_ids(provider, record):
+    result = {
+        "knowledgeReview": [{"text": "月光来自反射。", "evidenceId": "e1"}],
+        "mistakeNotes": [{"text": "复习月光来源。", "questionId": "q01"}],
+        "reviewSuggestions": [{"text": "解释月光。", "questionId": "q01", "evidenceId": "e1"}],
+    }
+    adapter, _ = provider(content=json.dumps(result))
+
+    normalized = adapter.summarize(record)
+
+    assert normalized["knowledgeReview"][0]["evidenceIds"] == ["e1"]
+    assert normalized["mistakeNotes"][0]["questionIds"] == ["q01"]
+    assert normalized["mistakeNotes"][0]["evidenceIds"] == []
+    assert normalized["reviewSuggestions"][0]["questionIds"] == ["q01"]

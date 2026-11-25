@@ -1,6 +1,7 @@
 import importlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
@@ -100,8 +101,29 @@ def test_accepted_generated_quiz_uses_two_calls_and_publishes_once(
         assert (job.status, job.call_count, job.lease_count) == ("SUCCEEDED", 2, 1)
         assert job.lease_token is None
         assert stored.ai_generated
-        assert len(stored.content["questions"]) == 20
+        assert len(stored.content["questions"]) == 12
         assert {item["evidenceId"] for item in stored.evidence} >= {"earth-tilt"}
+
+
+def test_new_generation_rejects_a_legacy_twenty_question_set(
+    worker_module, database, settings, quiz
+):
+    legacy = deepcopy(quiz)
+    for index in range(8):
+        question = deepcopy(quiz["questions"][index])
+        question["questionId"] = f"legacy-{index + 1}"
+        question["stem"] += f"（旧题组 {index + 1}）"
+        legacy["questions"].append(question)
+    job_id = queue_generation(database, settings)
+    ai = FakeAI(quiz=legacy)
+
+    assert worker_module.Worker(settings, database, ai).process_once()
+
+    with database() as session:
+        job = session.get(db.GenerationJob, job_id)
+        assert job.status == "FAILED"
+        assert job.error_code == "GENERATION_QUALITY_FAILED"
+        assert session.scalar(select(db.Quiz).where(db.Quiz.job_id == job_id)) is None
 
 
 @pytest.mark.parametrize("bad_shape", [False, True])
@@ -115,7 +137,7 @@ def test_worker_repairs_only_once_and_checks_the_repaired_quiz(
     if not bad_shape:
         ai.verdicts.append(failing_review)
     else:
-        ai.generation = lambda: {**quiz, "questions": quiz["questions"][:19]}
+        ai.generation = lambda: {**quiz, "questions": quiz["questions"][:11]}
 
     worker_module.Worker(settings, database, ai).process_once()
 
@@ -268,8 +290,8 @@ def queue_summary(database, settings, quiz, *, retry_count=0, call_count=0):
             user_id=user.id,
             topic_title=topic["title"],
             completed_at=now,
-            total_questions=20,
-            correct_count=20,
+            total_questions=len(quiz["questions"]),
+            correct_count=len(quiz["questions"]),
             takeaways=quiz["takeaways"],
             answers=answers,
         )
@@ -335,7 +357,7 @@ def test_summary_with_existing_citations_finishes_without_mutating_record(
         summary = session.get(db.RecordSummary, record_id)
         assert summary.status == "SUCCEEDED"
         assert summary.content == result
-        assert session.get(db.Record, record_id).correct_count == 20
+        assert session.get(db.Record, record_id).correct_count == 12
 
 
 def test_cleanup_expires_queued_tasks_and_preserves_a_live_lease(worker_module, database, settings):
@@ -383,7 +405,7 @@ def test_summary_day_quota_binds_real_model_calls_and_keeps_basic_result(
             0,
         )
         assert blocked.error_retryable
-        assert session.get(db.Record, second).correct_count == 20
+        assert session.get(db.Record, second).correct_count == 12
 
 
 def test_review_timeout_resumes_repaired_candidate_with_one_call_left(

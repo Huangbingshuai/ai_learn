@@ -87,7 +87,7 @@ export function HomeScreen({
         <Text>校服啦？</Text>
       </View>
     </View>
-    <Text className='home-caption'>一组 20 道题，每题都有讲解</Text>
+    <Text className='home-caption'>一组 12 道题，每题都有讲解</Text>
     <View className='topic-form'>
       <View className='topic-field'>
         <Input
@@ -118,7 +118,7 @@ export function HomeScreen({
           <Text className='continue-title'>{intent.title}</Text>
           <Text className='continue-meta'>
             {intent.status === 'SUCCEEDED'
-              ? '已答 0/20 题'
+              ? '已生成 · 开始答题'
               : intent.phase ? generationPhases[intent.phase] : '正在出题'}
           </Text>
         </View>

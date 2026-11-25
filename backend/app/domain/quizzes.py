@@ -4,8 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 from app.domain.topics import normalize
 
-TOTAL_QUESTIONS = 20
-RULES_VERSION = "quiz-v1"
+TOTAL_QUESTIONS = 12
+LEGACY_QUESTION_COUNTS = frozenset({12, 20})
+RULES_VERSION = "quiz-v2"
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 QuestionType = Literal["single", "multi", "judge"]
 
@@ -54,7 +55,7 @@ class Question(QuizModel):
 class QuizSpec(QuizModel):
     title: str = Field(min_length=1, max_length=100)
     takeaways: list[Takeaway] = Field(min_length=1, max_length=8)
-    questions: list[Question] = Field(min_length=TOTAL_QUESTIONS, max_length=TOTAL_QUESTIONS)
+    questions: list[Question] = Field(min_length=TOTAL_QUESTIONS, max_length=20)
 
 
 def validate_quiz(raw: dict, topic: dict) -> QuizSpec:
@@ -62,9 +63,11 @@ def validate_quiz(raw: dict, topic: dict) -> QuizSpec:
     if {q.type for q in spec.questions} != {"single", "multi", "judge"}:
         raise ValueError("Include single, multi and judge questions")
     stems = {normalize(q.stem) for q in spec.questions}
+    question_count = len(spec.questions)
     if (
-        len({q.questionId for q in spec.questions}) != TOTAL_QUESTIONS
-        or len(stems) != TOTAL_QUESTIONS
+        question_count not in LEGACY_QUESTION_COUNTS
+        or len({q.questionId for q in spec.questions}) != question_count
+        or len(stems) != question_count
         or "" in stems
     ):
         raise ValueError("Every question must have a unique ID and stem")

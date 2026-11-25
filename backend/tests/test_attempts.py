@@ -32,7 +32,7 @@ def play(client, login):
 def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
     headers, quiz_id, attempt = play
     assert attempt["answeredCount"] == 0
-    assert attempt["totalQuestions"] == 20
+    assert attempt["totalQuestions"] == 12
     assert attempt["status"] == "ACTIVE"
     assert set(attempt["question"]) == {
         "questionId",
@@ -184,9 +184,9 @@ def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_d
     assert results[0] == results[1]
     rid = results[0]["recordId"]
     detail = client.get(f"/v1/records/{rid}", headers=headers).json()
-    assert detail["totalQuestions"] == 20
-    assert detail["correctCount"] == 19
-    assert len(detail["answers"]) == 20
+    assert detail["totalQuestions"] == 12
+    assert detail["correctCount"] == 11
+    assert len(detail["answers"]) == 12
     assert detail["answers"][-1]["recordId"] == rid
     assert detail["aiSummary"]["status"] == "QUEUED"
     with database() as db:
@@ -213,7 +213,7 @@ def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, 
         result = choose(failing, headers, aid, last["questionId"], last["correctOptionIds"])
     assert result.status_code == 500
     with database.begin() as db:
-        assert db.get(Attempt, aid).answered_count == 19
+        assert db.get(Attempt, aid).answered_count == 11
         assert db.get(AttemptAnswer, (aid, last["questionId"])) is None
         assert db.scalar(select(func.count()).select_from(Record)) == 0
         assert db.scalar(select(func.count()).select_from(RecordSummary)) == 0
@@ -234,7 +234,7 @@ def test_history_snapshot_survives_quiz_removal_and_is_private(
         db.delete(db.get(Quiz, quiz_id))
     response = client.get(f"/v1/records/{rid}", headers=headers)
     assert response.status_code == 200
-    assert response.json()["correctCount"] == 20
+    assert response.json()["correctCount"] == 12
     assert response.json()["answers"][0]["evidence"][0]["text"]
     other = login("device-888888")
     assert client.get("/v1/records", headers=other).json()["items"] == []
@@ -290,7 +290,7 @@ def test_summary_retry_is_private_and_can_only_be_accepted_once(
         summary.call_count = 2
     failure = client.get(f"/v1/records/{record_id}", headers=headers).json()
     assert failure["aiSummary"]["error"]["retryable"]
-    assert failure["correctCount"] == 19
+    assert failure["correctCount"] == 11
     assert (
         client.post(
             path, headers={**login("device-123999"), "Idempotency-Key": "cross-user"}

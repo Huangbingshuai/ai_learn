@@ -25,7 +25,7 @@ from app.db import (
     new_id,
     utcnow,
 )
-from app.domain.quizzes import validate_quiz
+from app.domain.quizzes import TOTAL_QUESTIONS, validate_quiz
 from app.domain.summaries import validate_summary
 from app.domain.topics import (
     CURRENT_VERSIONS,
@@ -391,7 +391,7 @@ class Worker:
 
         insufficient = AIError(
             "SOURCE_INSUFFICIENT",
-            "找到的可信资料不足以生成 20 道题。请缩小主题范围或换个主题。",
+            f"找到的可信资料不足以生成 {TOTAL_QUESTIONS} 道题。请缩小范围或换个主题。",
             False,
         )
         if len(passages) < MIN_PASSAGES:
@@ -457,7 +457,10 @@ class Worker:
         self, claim: _Claim, topic: dict, raw: dict
     ) -> tuple[dict | None, list[str]]:
         try:
-            quiz = validate_quiz(raw, topic).model_dump(mode="json", by_alias=True)
+            validated = validate_quiz(raw, topic)
+            if len(validated.questions) != TOTAL_QUESTIONS:
+                raise ValueError(f"A new quiz must contain {TOTAL_QUESTIONS} questions")
+            quiz = validated.model_dump(mode="json", by_alias=True)
         except ValueError as error:
             return None, _validation_issues(error, raw)
         verdict = self._model_call(claim, self.ai.review, topic, quiz, phase="VERIFYING")

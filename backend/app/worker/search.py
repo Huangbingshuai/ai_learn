@@ -10,7 +10,7 @@ import httpx
 from app.worker.ai import AIError
 
 SEARCH_URL = "https://api.tavily.com/search"
-MIN_PASSAGES = 5
+MIN_PASSAGES = 2
 MAX_PASSAGES = 16
 
 
