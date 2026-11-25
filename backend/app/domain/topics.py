@@ -52,6 +52,7 @@ class TopicView(BaseModel):
     topicKey: str
     title: str
     art: Literal["earth", "moon", "topic"]
+    canDelete: bool = False
 
 
 class Topic(TopicView):

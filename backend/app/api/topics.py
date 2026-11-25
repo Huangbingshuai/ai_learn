@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, tuple_, update
 
@@ -11,7 +11,9 @@ from app.api.errors import ApiError, ErrorView, not_found
 from app.db import Attempt, Quiz, SavedTopic, utcnow
 from app.domain.topics import CURRENT_VERSIONS, TopicView, load_topics
 
-router = APIRouter(responses={401: {"model": ErrorView}, 422: {"model": ErrorView}})
+router = APIRouter(
+    responses={401: {"model": ErrorView}, 404: {"model": ErrorView}, 422: {"model": ErrorView}}
+)
 
 
 class TopicList(BaseModel):
@@ -44,7 +46,8 @@ def list_topics(
         )
     ).all()
     items = [
-        TopicView(topicKey=row.topic_key, title=row.title, art="topic") for row in rows[:limit]
+        TopicView(topicKey=row.topic_key, title=row.title, art="topic", canDelete=True)
+        for row in rows[:limit]
     ]
     if cursor is None:
         # Initial examples are available to each session without writing shared saved topics.
@@ -57,6 +60,20 @@ def list_topics(
         last = rows[limit - 1]
         next_cursor = f"{last.updated_at.isoformat()}|{last.topic_key}"
     return TopicList(items=items, nextCursor=next_cursor)
+
+
+@router.delete("/topics/{topic_key}", status_code=204)
+def delete_saved_topic(topic_key: str, db: DB, user_id: CurrentUser) -> Response:
+    with db.begin():
+        topic = db.scalar(
+            select(SavedTopic)
+            .where(SavedTopic.user_id == user_id, SavedTopic.topic_key == topic_key)
+            .with_for_update()
+        )
+        if topic is None:
+            raise not_found()
+        db.delete(topic)
+    return Response(status_code=204)
 
 
 @router.post("/topics/{topic_key}/quiz")

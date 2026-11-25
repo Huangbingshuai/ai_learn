@@ -12,8 +12,8 @@ def test_topic_picker_requires_login_and_lists_the_prototype_topics(client, logi
     result = client.get("/v1/topics", headers=login()).json()
     assert result == {
         "items": [
-            {"topicKey": "seasons", "title": "四季成因", "art": "earth"},
-            {"topicKey": "moon", "title": "月相变化", "art": "moon"},
+            {"topicKey": "seasons", "title": "四季成因", "art": "earth", "canDelete": False},
+            {"topicKey": "moon", "title": "月相变化", "art": "moon", "canDelete": False},
         ]
     }
 
@@ -122,3 +122,35 @@ def test_seed_topics_open_saved_quiz_without_generation(client, login, database)
     moon = client.post("/v1/topics/moon/quiz", headers=headers)
     assert moon.status_code == 200
     assert moon.json()["quizId"] == first.json()["quizId"]
+
+
+def test_user_can_delete_only_their_saved_topic(client, login, database):
+    from datetime import UTC, datetime
+
+    from app.db import SavedTopic
+
+    headers = login()
+    other = login("other-delete-topic")
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    topic_key = "live-" + "a" * 59
+    with database.begin() as db:
+        db.add(
+            SavedTopic(
+                user_id=user_id,
+                topic_key=topic_key,
+                title="我的主题",
+                scope="只测试删除行为",
+                evidence=[],
+                evidence_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    assert client.delete(f"/v1/topics/{topic_key}", headers=other).status_code == 404
+    assert client.delete("/v1/topics/seasons", headers=headers).status_code == 404
+    deleted = client.delete(f"/v1/topics/{topic_key}", headers=headers)
+    assert deleted.status_code == 204
+    assert topic_key not in {
+        item["topicKey"] for item in client.get("/v1/topics", headers=headers).json()["items"]
+    }
+    assert client.delete(f"/v1/topics/{topic_key}", headers=headers).status_code == 404
