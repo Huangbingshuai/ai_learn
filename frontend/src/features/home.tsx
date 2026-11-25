@@ -1,9 +1,14 @@
-import { Image, Input, Text, View } from '@tarojs/components'
+import { Button, Image, Input, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import type { PendingGeneration, RestartGroup } from '../api/client'
 import cover from '../assets/cover.webp'
 import { Action, ErrorNote } from '../components/comic'
 import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
+
+const topicIdeas = [
+  ['为什么会有彩虹？', '恐龙为什么会灭绝？', '月亮为什么会变圆？'],
+  ['猫咪为什么会打呼噜？', '飞机怎么飞上天？', '海水为什么是咸的？'],
+]
 
 export function HomeScreen({
   input, error, restart, pending, onEdit, onError, onGenerate, onPending, onRestart,
@@ -19,6 +24,7 @@ export function HomeScreen({
   onRestart: (group: RestartGroup) => void
 }) {
   const [now, setNow] = useState(Date.now)
+  const [ideaPage, setIdeaPage] = useState(0)
   const canRestart = restart && restartAvailable(restart.quizExpiresAt, now)
 
   useEffect(() => {
@@ -58,6 +64,17 @@ export function HomeScreen({
       </View>
       {error && <ErrorNote>{error}</ErrorNote>}
       <Action onClick={submitTopic}>生成练习</Action>
+    </View>
+    <View className='home-ideas'>
+      <View className='home-ideas-head'>
+        <Text className='home-ideas-title'>还没想好学什么？</Text>
+        <Button className='home-ideas-refresh ui-button' hoverClass='none'
+          onClick={() => setIdeaPage((page) => (page + 1) % topicIdeas.length)}>换一组 ↻</Button>
+      </View>
+      <View className='home-idea-list'>
+        {topicIdeas[ideaPage].map((idea, index) => <Button key={idea} className={`home-idea ui-button idea-${index}`}
+          hoverClass='row-press' onClick={() => onEdit(idea)}>{idea}<Text>＋</Text></Button>)}
+      </View>
     </View>
     {(pending.length > 0 || restart) && <View className='home-continue'>
       {pending.map((intent) => <View className='continue-row-shell' key={intent.key}>

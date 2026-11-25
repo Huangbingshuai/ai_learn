@@ -70,7 +70,6 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
   return <>
     <View className='library-intro'>
       <Text className='h1'>我的题库</Text>
-      <Text className='body-copy'>保存过的主题都在这里，点开即可继续学习。</Text>
     </View>
     {error && <ErrorNote>{error}</ErrorNote>}
     {loading ? <StatusPanel title='正在加载题库…' /> : topics.length === 0 ? <StatusPanel title='题库还是空的'>
