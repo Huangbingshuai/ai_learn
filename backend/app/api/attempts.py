@@ -14,6 +14,7 @@ from app.db import (
     AttemptAnswer,
     CoinSettlement,
     GenerationJob,
+    MistakeItem,
     Quiz,
     Record,
     RecordSummary,
@@ -64,6 +65,7 @@ class AttemptView(QuizView):
     attemptId: str
     topicTitle: str
     status: Literal["ACTIVE", "PASSED", "ABANDONED"]
+    purpose: Literal["LEARNING", "PRACTICE"]
     answeredCount: int
     totalQuestions: int
     question: QuestionView | None = None
@@ -119,6 +121,7 @@ def _attempt_view(db: DB, attempt: Attempt, quiz: Quiz) -> AttemptView:
         quizExpiresAt=quiz.expires_at,
         topicTitle=quiz.topic_title,
         status=status,
+        purpose=attempt.purpose,
         answeredCount=attempt.answered_count,
         totalQuestions=len(questions),
         question=current,
@@ -234,6 +237,153 @@ def start_attempt(
         )
         attempt = db.get(Attempt, attempt_id) if attempt_id else db.scalar(same_request)
         if attempt.quiz_id != quiz_id:
+            raise key_conflict()
+        return _attempt_view(db, attempt, quiz)
+
+
+@router.post("/mistakes/{fingerprint}/practice", status_code=201)
+def start_mistake_practice(
+    fingerprint: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+    db: DB,
+    user_id: CurrentUser,
+    idempotency_key: IdempotencyKey,
+    request: Request,
+) -> AttemptView:
+    with db.begin():
+        existing = db.scalar(
+            select(Attempt)
+            .where(Attempt.user_id == user_id, Attempt.idempotency_key == idempotency_key)
+            .with_for_update()
+        )
+        if existing is not None:
+            if existing.purpose != "PRACTICE":
+                raise key_conflict()
+            quiz = _owned_quiz(db, existing.quiz_id, user_id)
+            job = db.get(GenerationJob, quiz.job_id)
+            if job is None or job.source != "PRACTICE" or job.input_digest != fingerprint:
+                raise key_conflict()
+            return _attempt_view(db, existing, quiz)
+
+        item = db.scalar(
+            select(MistakeItem)
+            .where(MistakeItem.user_id == user_id, MistakeItem.fingerprint == fingerprint)
+            .with_for_update()
+        )
+        if item is None:
+            raise not_found()
+
+        # Another identical request may have completed while this request waited
+        # for the item lock. Recheck before charging the daily attempt quota.
+        existing = db.scalar(
+            select(Attempt)
+            .where(Attempt.user_id == user_id, Attempt.idempotency_key == idempotency_key)
+            .with_for_update()
+        )
+        if existing is not None:
+            if existing.purpose != "PRACTICE":
+                raise key_conflict()
+            quiz = _owned_quiz(db, existing.quiz_id, user_id)
+            job = db.get(GenerationJob, quiz.job_id)
+            if job is None or job.source != "PRACTICE" or job.input_digest != fingerprint:
+                raise key_conflict()
+            return _attempt_view(db, existing, quiz)
+
+        now = utcnow()
+        settings = request.app.state.settings
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            reserve_quota(
+                db,
+                f"attempt:user:{user_id}",
+                start,
+                start + timedelta(days=1),
+                settings.user_daily_attempt_limit,
+            )
+        except QuotaReached:
+            raise ApiError(429, "RATE_LIMITED", "今天的练习次数已达上限，请明天再试。", True)
+
+        job_key = f"practice-{digest(fingerprint + ':' + idempotency_key)}"
+        job_id = db.scalar(
+            insert(GenerationJob)
+            .values(
+                user_id=user_id,
+                source="PRACTICE",
+                topic_key=item.topic_key,
+                topic_title=item.topic_title,
+                input_digest=fingerprint,
+                idempotency_key=job_key,
+                status="SUCCEEDED",
+                next_run_at=now,
+                created_at=now,
+                expires_at=now + timedelta(minutes=settings.job_minutes),
+                model_name="mistake-practice",
+                rules_version=RULES_VERSION,
+            )
+            .on_conflict_do_nothing(constraint="uq_generation_idempotency")
+            .returning(GenerationJob.id)
+        )
+        job = (
+            db.get(GenerationJob, job_id)
+            if job_id
+            else db.scalar(
+                select(GenerationJob)
+                .where(
+                    GenerationJob.user_id == user_id,
+                    GenerationJob.source == "PRACTICE",
+                    GenerationJob.idempotency_key == job_key,
+                )
+                .with_for_update()
+            )
+        )
+        if job is None or job.input_digest != fingerprint:
+            raise key_conflict()
+
+        quiz = db.scalar(select(Quiz).where(Quiz.job_id == job.id))
+        if quiz is None:
+            question = dict(item.question_snapshot)
+            question.setdefault("aiGenerated", False)
+            quiz = Quiz(
+                job_id=job.id,
+                user_id=user_id,
+                topic_key=item.topic_key,
+                topic_title=item.topic_title,
+                content={"questions": [question]},
+                evidence=item.latest_receipt.get("evidence", []),
+                ai_generated=bool(question.get("aiGenerated", False)),
+                created_at=now,
+                expires_at=now + timedelta(hours=settings.quiz_hours),
+                rules_version=RULES_VERSION,
+            )
+            db.add(quiz)
+            db.flush()
+
+        attempt_id = db.scalar(
+            insert(Attempt)
+            .values(
+                user_id=user_id,
+                quiz_id=quiz.id,
+                idempotency_key=idempotency_key,
+                status="ACTIVE",
+                answered_count=0,
+                correct_count=0,
+                purpose="PRACTICE",
+                created_at=now,
+                rules_version=RULES_VERSION,
+            )
+            .on_conflict_do_nothing(constraint="uq_attempt_start_key")
+            .returning(Attempt.id)
+        )
+        attempt = (
+            db.get(Attempt, attempt_id)
+            if attempt_id
+            else db.scalar(
+                select(Attempt).where(
+                    Attempt.user_id == user_id,
+                    Attempt.idempotency_key == idempotency_key,
+                )
+            )
+        )
+        if attempt is None or attempt.quiz_id != quiz.id:
             raise key_conflict()
         return _attempt_view(db, attempt, quiz)
 
@@ -407,7 +557,8 @@ def submit_answer(
         )
         if attempt.answered_count == len(questions):
             attempt.status = "PASSED"
-            _save_completed_record(db, attempt, quiz, receipt, request.app.state.settings)
+            if attempt.purpose != "PRACTICE":
+                _save_completed_record(db, attempt, quiz, receipt, request.app.state.settings)
         db.add(
             AttemptAnswer(
                 attempt_id=attempt.id,

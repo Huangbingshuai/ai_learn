@@ -144,7 +144,7 @@ class GenerationJob(Base):
     __tablename__ = "generation_jobs"
     __table_args__ = (
         UniqueConstraint("user_id", "source", "idempotency_key", name="uq_generation_idempotency"),
-        CheckConstraint("source IN ('TOPIC', 'FIXED')", name="ck_generation_source"),
+        CheckConstraint("source IN ('TOPIC', 'FIXED', 'PRACTICE')", name="ck_generation_source"),
         CheckConstraint(
             "status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_generation_status"
         ),
@@ -222,6 +222,7 @@ class Attempt(Base):
             "correct_count BETWEEN 0 AND answered_count AND answered_count BETWEEN 0 AND 20",
             name="ck_attempt_progress",
         ),
+        CheckConstraint("purpose IN ('LEARNING', 'PRACTICE')", name="ck_attempt_purpose"),
         Index("ix_attempts_quiz_status", "quiz_id", "status"),
     )
 
@@ -232,6 +233,7 @@ class Attempt(Base):
     status: Mapped[str] = mapped_column(String(12), default="ACTIVE")
     answered_count: Mapped[int] = mapped_column(Integer, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
+    purpose: Mapped[str] = mapped_column(String(12), default="LEARNING", server_default="LEARNING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     rules_version: Mapped[str] = mapped_column(String(32))
 
