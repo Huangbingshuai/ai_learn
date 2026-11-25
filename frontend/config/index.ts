@@ -33,6 +33,13 @@ export default defineConfig<'webpack5'>(() => {
     cache: { enable: false },
     logger: { quiet: false, stats: false },
     mini: {
+      webpackChain(chain) {
+        chain.plugin('providerPlugin').tap((args) => {
+          delete args[0].requestAnimationFrame
+          delete args[0].cancelAnimationFrame
+          return args
+        })
+      },
       imageUrlLoaderOption: { limit: true },
       postcss: {
         pxtransform: { enable: true, config: {} },
