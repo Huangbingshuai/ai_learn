@@ -67,7 +67,6 @@ export function createRequestClient({ transport, readSession, saveSession, login
 
 export function messageForError(error: unknown): string {
   if (!(error instanceof RequestError)) return '暂时无法连接，请稍后再试。'
-  if (error.code === 'TOPIC_UNSUPPORTED') return '暂时没有匹配的主题。可以换个说法，或从下方选择已有主题。'
   if (error.status === 401) return '登录暂时未完成，请重试。'
   return error.message
 }

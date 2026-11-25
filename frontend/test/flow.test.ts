@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { generationStep, nextPollDelay, optionAppearance, selectOption, restartAvailable, topicInputError } from '../src/features/flow'
+import { formatElapsed, generationPhases, nextPollDelay, optionAppearance, selectOption, restartAvailable, topicInputError } from '../src/features/flow'
 
 test('replaces single-choice selections and toggles multiple selections independently', () => {
   assert.deepEqual(selectOption('single', ['a'], 'b'), ['b'])
@@ -34,7 +34,9 @@ test('uses the trimmed code point count for the topic limit', () => {
 })
 
 test('displays the server generation phase and caps polling delay at eight seconds', () => {
-  assert.equal(generationStep('READING_SOURCES'), 0)
-  assert.equal(generationStep('GENERATING'), 1)
+  assert.equal(generationPhases.RESOLVING_TOPIC, '理解主题')
+  assert.equal(generationPhases.VERIFYING, '核验答案与讲解')
+  assert.equal(formatElapsed(1000, 0), '0 秒')
+  assert.equal(formatElapsed(1000, 66000), '1 分 5 秒')
   assert.deepEqual([2000, 3000, 4500, 6750, 8000].map(nextPollDelay), [3000, 4500, 6750, 8000, 8000])
 })

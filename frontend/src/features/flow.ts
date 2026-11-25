@@ -28,8 +28,17 @@ export function topicInputError(input: string): string | undefined {
   if (length < 2 || length > 80) return '主题需要 2–80 字，请调整后再试。'
 }
 
-export function generationStep(phase?: string | null): number {
-  return phase === 'GENERATING' ? 1 : 0
+export const generationPhases = {
+  RESOLVING_TOPIC: '理解主题',
+  READING_SOURCES: '查找和核对资料',
+  GENERATING: '生成题目',
+  VERIFYING: '核验答案与讲解',
+} as const
+
+export function formatElapsed(startedAt: number, now = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  return minutes ? `${minutes} 分 ${seconds % 60} 秒` : `${seconds} 秒`
 }
 
 export function nextPollDelay(delay: number): number {
