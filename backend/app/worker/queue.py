@@ -545,7 +545,14 @@ class Worker:
                 )
                 .values(status="ABANDONED")
             )
-            session.execute(delete(Quiz).where(Quiz.expires_at <= now - timedelta(hours=24)))
+            session.execute(
+                delete(Quiz).where(
+                    Quiz.expires_at <= now - timedelta(hours=24),
+                    ~exists().where(
+                        SavedTopic.user_id == Quiz.user_id, SavedTopic.topic_key == Quiz.topic_key
+                    ),
+                )
+            )
             session.execute(
                 delete(GenerationJob).where(
                     GenerationJob.status.in_(("SUCCEEDED", "FAILED")),

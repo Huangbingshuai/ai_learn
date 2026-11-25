@@ -1,13 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, tuple_, update
 
+from app.api.attempts import QuizView
 from app.api.dependencies import DB, CurrentUser
-from app.api.errors import ApiError, ErrorView
-from app.db import SavedTopic
+from app.api.errors import ApiError, ErrorView, not_found
+from app.db import Attempt, Quiz, SavedTopic, utcnow
 from app.domain.topics import TopicView, load_topics
 
 router = APIRouter(responses={401: {"model": ErrorView}, 422: {"model": ErrorView}})
@@ -56,3 +57,28 @@ def list_topics(
         last = rows[limit - 1]
         next_cursor = f"{last.updated_at.isoformat()}|{last.topic_key}"
     return TopicList(items=items, nextCursor=next_cursor)
+
+
+@router.post("/topics/{topic_key}/quiz")
+def open_saved_quiz(topic_key: str, db: DB, user_id: CurrentUser, request: Request) -> QuizView:
+    with db.begin():
+        if db.get(SavedTopic, (user_id, topic_key)) is None:
+            raise not_found()
+        quiz = db.scalar(
+            select(Quiz)
+            .where(Quiz.user_id == user_id, Quiz.topic_key == topic_key)
+            .order_by(Quiz.created_at.desc(), Quiz.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        if quiz is None:
+            raise ApiError(404, "SAVED_QUIZ_UNAVAILABLE", "已保存的题组已不可用，请重新生成。")
+        now = utcnow()
+        if quiz.expires_at <= now:
+            db.execute(
+                update(Attempt)
+                .where(Attempt.quiz_id == quiz.id, Attempt.status == "ACTIVE")
+                .values(status="ABANDONED")
+            )
+            quiz.expires_at = now + timedelta(hours=request.app.state.settings.quiz_hours)
+        return QuizView(quizId=quiz.id, quizExpiresAt=quiz.expires_at)

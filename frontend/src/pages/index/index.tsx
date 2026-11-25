@@ -197,7 +197,12 @@ export default function Index() {
       case 'home':
         return <HomeScreen input={input} error={topicError} restart={restart} pending={pending}
           onEdit={(next) => { setInput(next); setTopicError('') }} onError={setTopicError}
-          onGenerate={launchGeneration} onTopic={(topic) => launchGeneration(topic.title, { topicKey: topic.topicKey })}
+          onGenerate={launchGeneration} onTopic={(topic) => {
+            if (topic.art === 'topic') {
+              updatePending((entries) => entries.filter((entry) => entry.title !== topic.title))
+              setScreen({ name: 'generation', intent: { kind: 'saved', topicKey: topic.topicKey, title: topic.title, key: makeKey() } })
+            } else launchGeneration(topic.title, { topicKey: topic.topicKey })
+          }}
           onPending={openGeneration} onFixedQuiz={launchFixed} onRestart={restartQuiz} />
       case 'generation': {
         const { intent } = screen
@@ -221,6 +226,7 @@ export default function Index() {
           onStartAgain={() => {
             if (intent.kind === 'fixed') launchFixed()
             else if (intent.kind === 'restart') launchGeneration(intent.group.topicTitle)
+            else if (intent.kind === 'saved') launchGeneration(intent.title, { topicKey: intent.topicKey })
             else {
               forgetPending(intent.key)
               launchGeneration(intent.title, intent.input)

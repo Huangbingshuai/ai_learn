@@ -69,6 +69,9 @@ export const api = {
   topics: (cursor?: string) => request<TopicList>({
     path: '/v1/topics' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
   }),
+  savedQuiz: (topicKey: string) => request<QuizGroup>({
+    path: `/v1/topics/${encodeURIComponent(topicKey)}/quiz`, method: 'POST',
+  }),
   generate: (data: TopicInput, idempotencyKey: string) => request<GenerationJob>({
     path: '/v1/generation-jobs', method: 'POST', data: data satisfies BodyFor<'/v1/generation-jobs', 'post'>, idempotencyKey,
   }),
