@@ -123,6 +123,14 @@
 - 小程序构建成功；首页第三入口、筛选/分页、错题详情、来源证据、状态切换、再练和余额更新符合原型风格；原有历史记录错题回顾继续工作。
 - 后端测试按 TDD 先红后绿记录；所有功能提交分开提交，不混入 `.idea/` 和 `project.private.config.json`。
 
+## Review Focus
+
+- 核对用户身份始终来自服务端会话，错题、金币和个人统计不会跨用户泄漏。
+- 核对错答事件幂等键、并发更新、历史回填、金币边界以及再练不生成正式记录/总结。
+- 核对学习、题库、错题本、个人主页之间的导航；删除主题必须可见并二次确认；既有学习记录错题回顾和普通练习保持可用。
+- 核对迁移与回填步骤可重复执行，前端 OpenAPI 类型来自当前后端契约。
+- 复核提交只包含功能代码、测试和文档，不含本地密钥、`.idea/` 或 `project.private.config.json`。
+
 ## 已核对的官方技术资料
 
 - SQLAlchemy 官方 PostgreSQL dialect 记录 `INSERT ... ON CONFLICT DO UPDATE/NOTHING`，适用于数据库级并发冲突处理：[SQLAlchemy PostgreSQL dialect](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#insert-on-conflict-upsert)。
