@@ -67,9 +67,7 @@ class MistakeItem(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "fingerprint", name="uq_mistake_user_fingerprint"),
         CheckConstraint("wrong_count > 0", name="ck_mistake_wrong_count"),
-        CheckConstraint(
-            "status IN ('TO_REVIEW', 'MASTERED')", name="ck_mistake_status"
-        ),
+        CheckConstraint("status IN ('TO_REVIEW', 'MASTERED')", name="ck_mistake_status"),
         Index(
             "ix_mistakes_user_recent",
             "user_id",
@@ -96,6 +94,25 @@ class MistakeItem(Base):
     mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MistakeAnswerEvent(Base):
+    __tablename__ = "mistake_answer_events"
+    __table_args__ = (
+        UniqueConstraint("user_id", "attempt_id", "question_id", name="uq_mistake_answer_event"),
+        Index("ix_mistake_events_user_fingerprint", "user_id", "fingerprint"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    question_id: Mapped[str] = mapped_column(String(64))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    receipt_snapshot: Mapped[dict] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):

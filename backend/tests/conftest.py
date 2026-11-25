@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,12 @@ from app.config import Settings
 from app.main import create_app
 
 BACKEND = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def fixed_data():
+    source = BACKEND / "data" / "topics" / "fixed-seasons.json"
+    return json.loads(source.read_text())
 
 
 @pytest.fixture

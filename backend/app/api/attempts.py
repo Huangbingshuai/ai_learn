@@ -26,6 +26,7 @@ from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, 
 from app.domain.summaries import RULES_VERSION as SUMMARY_RULES_VERSION
 from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
 from app.quota import QuotaReached, reserve_quota
+from app.services.mistakes import record_wrong_answer
 
 router = APIRouter(
     responses={
@@ -415,4 +416,15 @@ def submit_answer(
                 receipt=receipt.model_dump(mode="json"),
             )
         )
+        if not receipt.isCorrect:
+            record_wrong_answer(
+                db,
+                user_id=user_id,
+                attempt_id=attempt.id,
+                question=question,
+                receipt=receipt.model_dump(mode="json"),
+                topic_key=quiz.topic_key,
+                topic_title=quiz.topic_title,
+                answered_at=utcnow(),
+            )
         return receipt
