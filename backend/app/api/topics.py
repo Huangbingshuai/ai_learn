@@ -46,7 +46,13 @@ def list_topics(
         )
     ).all()
     items = [
-        TopicView(topicKey=row.topic_key, title=row.title, art="topic", canDelete=True)
+        TopicView(
+            topicKey=row.topic_key,
+            title=row.title,
+            originalInput=row.original_input,
+            art="topic",
+            canDelete=True,
+        )
         for row in rows[:limit]
     ]
     if cursor is None:

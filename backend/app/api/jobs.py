@@ -158,6 +158,7 @@ def create_job(
                     "topic": {
                         "topicKey": saved.topic_key,
                         "title": saved.title,
+                        "originalInput": saved.original_input,
                         "scope": saved.scope,
                         "evidence": saved.evidence,
                         "version": "web-v1",
@@ -167,7 +168,7 @@ def create_job(
                 topic_input = None
             else:
                 checkpoint = {"savedScope": saved.scope}
-                topic_input = saved.title[:80]
+                topic_input = saved.original_input or saved.title[:80]
         job_id = db.scalar(
             insert(GenerationJob)
             .values(

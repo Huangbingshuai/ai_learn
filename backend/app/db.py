@@ -207,6 +207,7 @@ class SavedTopic(Base):
     )
     topic_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(100))
+    original_input: Mapped[str | None] = mapped_column(String(80))
     scope: Mapped[str] = mapped_column(String(240))
     evidence: Mapped[list] = mapped_column(JSONB)
     evidence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

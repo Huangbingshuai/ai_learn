@@ -51,6 +51,7 @@ class Evidence(EvidenceView):
 class TopicView(BaseModel):
     topicKey: str
     title: str
+    originalInput: str | None = None
     art: Literal["earth", "moon", "topic"]
     canDelete: bool = False
 
