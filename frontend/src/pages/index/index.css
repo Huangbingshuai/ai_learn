@@ -107,7 +107,6 @@
   font-weight: 800;
   line-height: 1.48;
 }
-.home-caption { display: block; margin: 6px 0 13px; color: var(--muted); font-size: 12px; }
 .account-strip { display: flex; align-items: center; width: 100%; margin: 0 0 16px; padding: 9px 11px; border: 1px solid var(--ink); border-radius: 3px 12px 3px 12px; background: #fffdf7; text-align: left; box-shadow: 2px 2px 0 var(--ink); }
 .account-avatar { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; margin-right: 10px; border: 1px solid var(--ink); border-radius: 50%; background: var(--yellow); color: var(--ink); font-size: 18px; font-weight: 900; }
 .account-name { display: flex; flex: 1; flex-direction: column; gap: 2px; color: var(--ink); font-size: 14px; font-weight: 700; }
@@ -577,7 +576,6 @@
 .mistake-detail-meta { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
 .mistake-detail-question { display: block; font-size: 17px; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
 .library-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
-.library-intro .h1 { margin-bottom: 4px; }
 .library-intro .body-copy { margin: 0; color: var(--muted); }
 .topic-selection-toggle { flex: none; padding: 5px 10px; border: 1px solid var(--ink); border-radius: 4px 9px; background: var(--sky); color: var(--ink); font-size: 12px; font-weight: 850; }
 .topic-selection-toggle.active { background: var(--yellow); }
@@ -585,6 +583,7 @@
 .topic-selection-tools { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .topic-select-all { align-self: flex-start; color: var(--blue); font-size: 12px; font-weight: 850; }
 .topic-selected-count { color: var(--muted); font-size: 10px; }
+.topic-selection-note { display: block; margin: -4px 0 13px; padding: 9px 10px; border-left: 3px solid var(--blue); background: #fffdf7; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .topic-batch-delete { flex: none; padding: 9px 11px; border: 1px solid var(--red-ink); border-radius: 4px 9px; background: var(--pink); color: var(--red-ink); font-size: 11px; font-weight: 850; }
 .topic-batch-delete[disabled] { opacity: .45; }
 .topic-batch-delete.bottom { width: 100%; margin-top: 11px; }
@@ -595,7 +594,6 @@
 .topic-select-mark { display: flex; width: 18px; height: 18px; flex: none; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 50%; background: var(--white); color: var(--white); font-size: 11px; font-weight: 900; }
 .topic-select-mark.checked { border-color: var(--blue); background: var(--blue); }
 .topic-library-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
-.topic-library-hint { color: var(--muted); font-size: 10px; font-weight: 500; }
 .topic-delete-visible { display: flex; min-width: 58px; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px; border: 1px solid var(--red-ink); border-radius: 4px 10px; background: var(--pink); color: var(--red-ink); font-size: 11px; font-weight: 800; }
 .topic-delete-visible text:first-child { font-size: 17px; line-height: 1; }
 .fixed-quiz-card { display: flex; flex-direction: column; gap: 7px; margin-top: 20px; padding: 12px; border: 1px dashed var(--muted); border-radius: 4px 12px; background: var(--white); }
@@ -618,7 +616,8 @@
 .profile-wallet { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; padding: 12px; border: 1px solid #39304420; border-radius: 10px; background: var(--white); }
 .profile-wallet-title { display: block; font-size: 15px; font-weight: 850; }
 .profile-wallet-note { color: var(--muted); font-size: 10px; }
-.profile-wallet-value { padding: 7px 14px; border-radius: 24px; background: var(--warm); color: var(--white); font-size: 17px; font-weight: 850; }
+.profile-wallet-value { display: inline-flex; min-width: 76px; align-items: center; justify-content: center; gap: 5px; padding: 7px 12px; border-radius: 24px; background: #f19a4e; box-shadow: inset 0 -2px #d87d39; color: var(--white); font-size: 17px; font-weight: 850; }
+.profile-coin-icon { color: #ffe6a1; font-size: 16px; line-height: 1; }
 .profile-editor { display: flex; flex-direction: column; gap: 9px; }
 .profile-editor-avatar { align-self: center; width: 74px; height: 74px; margin: 2px 0 6px; }
 .profile-editor-avatar .profile-avatar-edit { right: 50%; bottom: -22px; transform: translateX(50%); white-space: nowrap; }

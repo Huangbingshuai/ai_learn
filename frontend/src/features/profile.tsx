@@ -94,7 +94,7 @@ export function ProfileScreen({ profile, onProfile, onHistory, onRecord }: {
     </View> : <StatusPanel title={error ? '学习统计暂不可用' : '正在加载学习统计…'} />}
     <View className='profile-wallet'>
       <View><Text className='profile-wallet-title'>金币</Text><Text className='profile-wallet-note'>答题积攒的学习奖励</Text></View>
-      <Text className='profile-wallet-value'>◈ {profile?.coinBalance ?? 0}</Text>
+      <View className='profile-wallet-value'><Text className='profile-coin-icon' aria-hidden>★</Text><Text>{profile?.coinBalance ?? 0}</Text></View>
     </View>
     {saved && <Text className='profile-success'>资料已保存</Text>}
     <View className='profile-records-head'>

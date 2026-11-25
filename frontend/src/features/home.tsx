@@ -6,8 +6,8 @@ import { Action, ErrorNote } from '../components/comic'
 import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
 
 const topicIdeas = [
-  ['为什么会有彩虹？', '恐龙为什么会灭绝？', '月亮为什么会变圆？'],
-  ['猫咪为什么会打呼噜？', '飞机怎么飞上天？', '海水为什么是咸的？'],
+  ['为什么会有彩虹？', '恐龙为什么会灭绝？', '月亮为什么会变圆？', '植物为什么向着太阳长？'],
+  ['猫咪为什么会打呼噜？', '飞机怎么飞上天？', '海水为什么是咸的？', '闪电为什么比雷声先到？'],
 ]
 
 export function HomeScreen({
@@ -53,7 +53,6 @@ export function HomeScreen({
         <Text>校服啦？</Text>
       </View>
     </View>
-    <Text className='home-caption'>一组 12 道题，每题都有讲解</Text>
     <View className='topic-form'>
       <View className='topic-field'>
         <Input className={`topic-input${error ? ' invalid' : ''}`} type='text' value={input} maxlength={-1}

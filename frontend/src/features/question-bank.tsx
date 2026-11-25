@@ -121,12 +121,11 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
   }
 
   return <>
-    <View className='library-intro'>
-      <Text className='h1'>我的题库</Text>
-      {!loading && deletableTopics.length > 0 && <Button className={`topic-selection-toggle ui-button${selectionMode ? ' active' : ''}`}
-        hoverClass='row-press' onClick={toggleSelectionMode}>{selectionMode ? '取消选择' : '选择'}</Button>}
-    </View>
-    {selectionMode && <View className='topic-selection-panel'>
+    {!loading && topics.length > 0 && <View className='library-intro'>
+      <Button className={`topic-selection-toggle ui-button${selectionMode ? ' active' : ''}`}
+        hoverClass='row-press' onClick={toggleSelectionMode}>{selectionMode ? '取消选择' : '选择'}</Button>
+    </View>}
+    {selectionMode && deletableTopics.length > 0 && <View className='topic-selection-panel'>
       <View className='topic-selection-tools'>
         <Button className='topic-select-all ui-button' hoverClass='none' onClick={toggleSelectAll}>
           {selectedTopics.length === deletableTopics.length ? '取消全选' : '全选已加载'}
@@ -136,6 +135,7 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
       <Button className='topic-batch-delete ui-button' hoverClass='row-press' disabled={!selectedTopics.length || deleting}
         onClick={() => setBatchDeleteOpen(true)}>删除已选主题{selectedTopics.length ? `（${selectedTopics.length}）` : ''}</Button>
     </View>}
+    {selectionMode && deletableTopics.length === 0 && <Text className='topic-selection-note'>推荐主题可以直接练习；生成的自建主题会出现在这里，支持勾选后批量删除。</Text>}
     {error && <ErrorNote>{error}</ErrorNote>}
     {loading ? <StatusPanel title='正在加载题库…' /> : topics.length === 0 ? <StatusPanel title='题库还是空的'>
       <Text className='body-copy'>回到“学习”输入感兴趣的内容，生成练习后会自动收进题库。</Text>
@@ -149,7 +149,6 @@ export function QuestionBankScreen({ onTopic, onFixedQuiz }: {
           <View className='topic-symbol' aria-hidden />
           <View className='topic-library-copy'>
             <Text className='topic-title'>{topic.title}</Text>
-            <Text className='topic-library-hint'>{topic.canDelete ? '我的主题 · 点击开始练习' : '推荐主题 · 点击开始练习'}</Text>
           </View>
           <Text className='topic-arrow' aria-hidden>›</Text>
         </Button>
