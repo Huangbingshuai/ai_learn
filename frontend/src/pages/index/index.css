@@ -576,12 +576,24 @@
 .mistake-detail-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .mistake-detail-meta { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
 .mistake-detail-question { display: block; font-size: 17px; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
-.library-intro { margin-bottom: 14px; }
+.library-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
 .library-intro .h1 { margin-bottom: 4px; }
 .library-intro .body-copy { margin: 0; color: var(--muted); }
+.topic-selection-toggle { flex: none; padding: 5px 10px; border: 1px solid var(--ink); border-radius: 4px 9px; background: var(--sky); color: var(--ink); font-size: 12px; font-weight: 850; }
+.topic-selection-toggle.active { background: var(--yellow); }
+.topic-selection-panel { display: flex; align-items: center; gap: 9px; margin: -4px 0 13px; padding: 9px; border: 1px dashed var(--muted); border-radius: 4px 10px; background: #fffdf7; }
+.topic-selection-tools { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.topic-select-all { align-self: flex-start; color: var(--blue); font-size: 12px; font-weight: 850; }
+.topic-selected-count { color: var(--muted); font-size: 10px; }
+.topic-batch-delete { flex: none; padding: 9px 11px; border: 1px solid var(--red-ink); border-radius: 4px 9px; background: var(--pink); color: var(--red-ink); font-size: 11px; font-weight: 850; }
+.topic-batch-delete[disabled] { opacity: .45; }
+.topic-batch-delete.bottom { width: 100%; margin-top: 11px; }
 .topic-library-list { display: flex; flex-direction: column; gap: 10px; }
 .topic-library-row { display: flex; align-items: stretch; gap: 8px; }
 .topic-library-card { min-height: 68px; flex: 1; }
+.topic-library-card.is-selected { outline: 2px solid var(--blue); outline-offset: 1px; }
+.topic-select-mark { display: flex; width: 18px; height: 18px; flex: none; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 50%; background: var(--white); color: var(--white); font-size: 11px; font-weight: 900; }
+.topic-select-mark.checked { border-color: var(--blue); background: var(--blue); }
 .topic-library-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .topic-library-hint { color: var(--muted); font-size: 10px; font-weight: 500; }
 .topic-delete-visible { display: flex; min-width: 58px; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px; border: 1px solid var(--red-ink); border-radius: 4px 10px; background: var(--pink); color: var(--red-ink); font-size: 11px; font-weight: 800; }
