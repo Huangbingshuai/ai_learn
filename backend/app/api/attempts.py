@@ -22,6 +22,7 @@ from app.db import (
 from app.domain.quizzes import RULES_VERSION, Identifier, Option, QuestionType, validate_quiz
 from app.domain.summaries import RULES_VERSION as SUMMARY_RULES_VERSION
 from app.domain.topics import EvidenceView, get_topic_version, load_fixed_quiz
+from app.quota import QuotaReached, reserve_quota
 
 router = APIRouter(
     responses={
@@ -29,6 +30,7 @@ router = APIRouter(
         404: {"model": ErrorView},
         409: {"model": ErrorView},
         422: {"model": ErrorView},
+        429: {"model": ErrorView},
     }
 )
 local_router = APIRouter(
@@ -182,7 +184,11 @@ def fixed_quiz(
 
 @router.post("/attempts", status_code=201)
 def start_attempt(
-    body: StartAttempt, db: DB, user_id: CurrentUser, idempotency_key: IdempotencyKey
+    body: StartAttempt,
+    db: DB,
+    user_id: CurrentUser,
+    idempotency_key: IdempotencyKey,
+    request: Request,
 ) -> AttemptView:
     quiz_id = str(body.quizId)
     same_request = select(Attempt).where(
@@ -198,6 +204,18 @@ def start_attempt(
         now = utcnow()
         if quiz.expires_at <= now:
             raise expired_quiz()
+        settings = request.app.state.settings
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            reserve_quota(
+                db,
+                f"attempt:user:{user_id}",
+                start,
+                start + timedelta(days=1),
+                settings.user_daily_attempt_limit,
+            )
+        except QuotaReached:
+            raise ApiError(429, "RATE_LIMITED", "今天的练习次数已达上限，请明天再试。", True)
         attempt_id = db.scalar(
             insert(Attempt)
             .values(

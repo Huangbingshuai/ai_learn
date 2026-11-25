@@ -81,8 +81,10 @@ PATCH_RULES = """只返回一个 JSON 对象。修复输入中的练习题，输
 优先替换有问题的题干、错误项和讲解，而不是只微调原来的措辞。
 如果资料只列举了一些用途，提问时限定在资料明确列举的范围。证据没有直接支持的推论、因果或
 适用边界应删去。错误项要能从同一道题引用的资料中判断，而不是靠常识猜测。
-整组仍须含单选、多选、判断。如果全部多选题都在待修范围中，保留至少一道合格多选题。
-根据 replaceTakeaways 决定是否返回修正后的完整知识要点列表。false 时返回 null。
+整组仍须含单选、多选、判断。如果全部多选题都在待修范围中，保留至少一道合格多选题；
+如果目标题包含整组唯一的多选题或判断题，修正时保留该题型。
+不要改动未列为 target 的题。根据 replaceTakeaways 决定是否返回修正后的完整知识要点列表。
+false 时返回 null。
 只引用输入中存在的证据 ID。按 questionsToReplace 里的完整字段输出，不省略题干、选项、
 正确选项 ID、讲解或依据。格式示例（题号和事实只作示意）：
 {"questions":[{"questionId":"q01","type":"single","stem":"资料描述的光传播条件是什么？",
@@ -146,7 +148,7 @@ class _LiveReview(_Review):
 
 
 class _QuizPatch(_StrictOutput):
-    questions: list[Question] = Field(max_length=20)
+    questions: list[Question] = Field(default_factory=list, max_length=20)
     takeaways: list[Takeaway] | None = None
 
 
@@ -359,39 +361,43 @@ issues 只列需要修正的质量缺陷。指出证据不支持的具体选项�
         if not targets and not replace_takeaways:
             return None
 
-        patch = self._request(
-            "repair_selected",
-            PATCH_RULES + (LIVE_QUIZ_RULES if "scope" in topic else ""),
-            {
-                "topic": _topic(topic),
-                "issues": issues,
-                "targetQuestionIds": [
-                    question["questionId"]
-                    for question in questions
-                    if question["questionId"] in targets
-                ],
-                "questionsToReplace": [
-                    question for question in questions if question["questionId"] in targets
-                ],
-                "retainedQuestions": [
-                    {key: question.get(key) for key in ("questionId", "type", "stem")}
-                    for question in questions
-                    if question["questionId"] not in targets
-                ],
-                "replaceTakeaways": replace_takeaways,
-                "existingTakeaways": source.get("takeaways") if replace_takeaways else [],
-            },
-            12000,
-            _QuizPatch,
-        )
+        try:
+            patch = self._request(
+                "repair_selected",
+                PATCH_RULES + (LIVE_QUIZ_RULES if "scope" in topic else ""),
+                {
+                    "topic": _topic(topic),
+                    "issues": issues,
+                    "targetQuestionIds": [
+                        question["questionId"]
+                        for question in questions
+                        if question["questionId"] in targets
+                    ],
+                    "questionsToReplace": [
+                        question for question in questions if question["questionId"] in targets
+                    ],
+                    "retainedQuestions": [
+                        {key: question.get(key) for key in ("questionId", "type", "stem")}
+                        for question in questions
+                        if question["questionId"] not in targets
+                    ],
+                    "replaceTakeaways": replace_takeaways,
+                    "existingTakeaways": source.get("takeaways") if replace_takeaways else [],
+                },
+                12000,
+                _QuizPatch,
+            )
+        except AIError as error:
+            if error.code == "PROVIDER_INVALID_OUTPUT":
+                return None
+            raise
+
         replacements = {question["questionId"]: question for question in patch["questions"]}
-        if (
-            replacements.keys() != targets
-            or len(patch["questions"]) != len(targets)
-            or (patch["takeaways"] is not None) != replace_takeaways
-        ):
-            raise _invalid_output()
-        return {
+        if len(replacements) != len(patch["questions"]) or not targets <= replacements.keys():
+            return None
+        if replace_takeaways and patch["takeaways"] is None:
+            return None
+        merged = {
             **source,
             "questions": [
                 replacements.get(question["questionId"], question)
@@ -399,6 +405,11 @@ issues 只列需要修正的质量缺陷。指出证据不支持的具体选项�
             ],
             "takeaways": patch["takeaways"] if replace_takeaways else source.get("takeaways"),
         }
+        try:
+            validate_quiz(merged, topic)
+        except ValueError:
+            return None
+        return merged
 
     def summarize(self, record: dict) -> dict:
         return self._request("summarize", SUMMARY_RULES, _snapshot(record), 3000, _Summary)
@@ -444,6 +455,12 @@ issues 只列需要修正的质量缺陷。指出证据不支持的具体选项�
         if finish_reason == "insufficient_system_resource":
             raise _unavailable()
         if finish_reason != "stop" or not isinstance(response.content, str):
+            logger.warning(
+                "Model response unusable provider=%s model=%s finish_reason=%s",
+                self.provider,
+                self.model,
+                finish_reason,
+            )
             raise _invalid_output()
         try:
             result = json.loads(
@@ -471,13 +488,26 @@ issues 只列需要修正的质量缺陷。指出证据不支持的具体选项�
         except APIConnectionError:
             raise _unavailable() from None
         except APIStatusError as exc:
-            if exc.code in (
+            code = str(exc.code or "")
+            normalized = code.lower()
+            logger.warning(
+                "Model request failed provider=%s status=%s code=%s type=%s",
+                self.provider,
+                exc.status_code,
+                code or None,
+                type(exc).__name__,
+            )
+            if normalized in (
                 "content_filter",
                 "content_policy_violation",
                 "data_inspection_failed",
             ):
                 raise _content_filter() from None
-            if exc.status_code == 402 or exc.code in ("insufficient_quota", "Arrearage"):
+            if (
+                exc.status_code == 402
+                or normalized in ("arrearage", "allocationquota.freetieronly")
+                or (self.provider == "deepseek" and normalized == "insufficient_quota")
+            ):
                 raise AIError(
                     "PROVIDER_QUOTA_EXHAUSTED", "模型服务额度不足，请稍后再试。", False
                 ) from None
@@ -501,6 +531,16 @@ issues 只列需要修正的质量缺陷。指出证据不支持的具体选项�
         return response
 
 
+class QwenChatOpenAI(ChatOpenAI):
+    """DashScope expects max_tokens; langchain-openai emits max_completion_tokens."""
+
+    def _get_request_payload(self, input_: Any, *, stop: list[str] | None = None, **kwargs: Any):
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        if "max_completion_tokens" in payload:
+            payload["max_tokens"] = payload.pop("max_completion_tokens")
+        return payload
+
+
 class QwenAI(ChatAI):
     """DashScope OpenAI-compatible chat completions with JSON output."""
 
@@ -517,7 +557,7 @@ class QwenAI(ChatAI):
         super().__init__(api_key, model, timeout)
 
     def _build_client(self, api_key: str, model: str, timeout: float) -> Any:
-        return ChatOpenAI(
+        return QwenChatOpenAI(
             api_key=api_key,
             model=model,
             base_url=self.base_url,
@@ -551,17 +591,28 @@ class DeepSeekAI(ChatAI):
 
 def build_ai(settings: Settings) -> ChatAI:
     """Build the configured provider once for the lifetime of the worker."""
+    qwen_key = settings.dashscope_api_key.get_secret_value()
+    deepseek_key = settings.deepseek_api_key.get_secret_value()
     if settings.ai_provider == "qwen":
-        api_key = settings.dashscope_api_key.get_secret_value()
-        if not api_key:
-            raise ValueError("启动生成工作进程前，请在后端配置 DASHSCOPE_API_KEY。")
+        if qwen_key:
+            return QwenAI(
+                qwen_key,
+                settings.qwen_model,
+                settings.model_timeout,
+                settings.dashscope_base_url,
+            )
+        if deepseek_key:
+            logger.warning("DASHSCOPE_API_KEY 未配置，工作进程改用 DeepSeek。")
+            return DeepSeekAI(deepseek_key, settings.deepseek_model, settings.model_timeout)
+        raise ValueError("启动生成工作进程前，请在后端配置 DASHSCOPE_API_KEY。")
+    if deepseek_key:
+        return DeepSeekAI(deepseek_key, settings.deepseek_model, settings.model_timeout)
+    if qwen_key:
+        logger.warning("DEEPSEEK_API_KEY 未配置，工作进程改用千问。")
         return QwenAI(
-            api_key,
+            qwen_key,
             settings.qwen_model,
             settings.model_timeout,
             settings.dashscope_base_url,
         )
-    api_key = settings.deepseek_api_key.get_secret_value()
-    if not api_key:
-        raise ValueError("启动生成工作进程前，请在后端配置 DEEPSEEK_API_KEY。")
-    return DeepSeekAI(api_key, settings.deepseek_model, settings.model_timeout)
+    raise ValueError("启动生成工作进程前，请在后端配置 DEEPSEEK_API_KEY。")

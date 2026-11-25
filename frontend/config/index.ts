@@ -10,6 +10,8 @@ export default defineConfig<'webpack5'>(() => {
       || url.username || url.password || url.search || url.hash) {
       throw new Error('QINGZHI_API_BASE_URL must be an HTTPS base URL (development also accepts HTTP).')
     }
+  } else if (!development) {
+    throw new Error('QINGZHI_API_BASE_URL is required for a production build.')
   }
   const devAuth = development && (process.env.QINGZHI_DEV_AUTH || process.env.TARO_APP_DEV_AUTH) === '1'
   const devFixedQuiz = devAuth && (process.env.QINGZHI_DEV_FIXED_QUIZ || process.env.TARO_APP_DEV_FIXED_QUIZ) === '1'

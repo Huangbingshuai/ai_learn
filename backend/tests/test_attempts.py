@@ -60,6 +60,19 @@ def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
     )
 
 
+def test_attempt_start_has_a_daily_user_limit(client, play):
+    headers, quiz_id, _ = play
+    client.app.state.settings.user_daily_attempt_limit = 1
+    response = client.post(
+        "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "second"}
+    )
+    assert (response.status_code, response.json()["code"]) == (429, "RATE_LIMITED")
+    replay = client.post(
+        "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "start"}
+    )
+    assert replay.status_code == 201
+
+
 def test_expired_quiz_cannot_be_reopened(client, play, database):
     from app.db import Quiz, utcnow
 

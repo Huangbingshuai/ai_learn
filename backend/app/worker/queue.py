@@ -84,9 +84,7 @@ def _validation_issues(error: ValueError, raw: dict) -> list[str]:
     if isinstance(error, ValidationError):
         return [
             f"{_issue_label(item['loc'], raw)}: {item['msg']}"
-            for item in error.errors(include_url=False, include_context=False, include_input=False)[
-                :12
-            ]
+            for item in error.errors(include_url=False, include_context=False, include_input=False)
         ]
     return [str(error)[:300] or "题组结构无效"]
 
@@ -247,7 +245,7 @@ class Worker:
                     ) from None
                 if row.pending_manual_retry:
                     row.retry_count += 1
-            row.model_name = self.settings.ai_model
+            row.model_name = getattr(self.ai, "model", self.settings.ai_model)
             row.call_count += 1
             row.lease_until = min(utcnow() + self.lease_duration, row.expires_at)
         return operation(*args)
