@@ -4,11 +4,11 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from hashlib import sha256
 from time import monotonic
 
 from pydantic import ValidationError
 from sqlalchemy import and_, delete, exists, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,13 +20,14 @@ from app.db import (
     RateLimit,
     Record,
     RecordSummary,
+    SavedTopic,
     SessionRow,
     new_id,
     utcnow,
 )
 from app.domain.quizzes import validate_quiz
 from app.domain.summaries import validate_summary
-from app.domain.topics import get_topic_version, normalize
+from app.domain.topics import get_topic_version, live_topic_key, normalize
 from app.quota import QuotaReached, reserve_summary_quota
 from app.worker.ai import AIError, DeepSeekAI
 from app.worker.search import MIN_PASSAGES, TavilySearch
@@ -236,8 +237,10 @@ class Worker:
             checkpoint = row.checkpoint or {}
             topic_input = row.topic_input
             repair_started = row.repaired
-        if topic_input:
-            topic = self._live_topic(claim, topic_input, checkpoint)
+        if "topic" in checkpoint:
+            topic = checkpoint["topic"]
+        elif topic_input:
+            topic = self._live_topic(claim, topic_input, checkpoint, topic_key)
         else:
             try:
                 self._set_reading_sources(claim)
@@ -297,7 +300,34 @@ class Worker:
             )
             row.topic_key = topic["topicKey"]
             row.topic_version = topic["version"]
+            if "scope" in topic:
+                self._save_topic(session, row.user_id, topic, now)
             _succeed(row)
+
+    def _save_topic(self, session: Session, user_id: str, topic: dict, now: datetime) -> None:
+        evidence_at = datetime.fromisoformat(topic["evidenceAt"])
+        statement = insert(SavedTopic).values(
+            user_id=user_id,
+            topic_key=topic["topicKey"],
+            title=topic["title"],
+            scope=topic["scope"],
+            evidence=topic["evidence"],
+            evidence_at=evidence_at,
+            updated_at=now,
+        )
+        session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[SavedTopic.user_id, SavedTopic.topic_key],
+                set_={
+                    "title": statement.excluded.title,
+                    "scope": statement.excluded.scope,
+                    "evidence": statement.excluded.evidence,
+                    "evidence_at": statement.excluded.evidence_at,
+                    "updated_at": statement.excluded.updated_at,
+                },
+                where=statement.excluded.evidence_at >= SavedTopic.evidence_at,
+            )
+        )
 
     def _set_reading_sources(self, claim: _Claim) -> None:
         with self.sessions.begin() as session:
@@ -305,15 +335,17 @@ class Worker:
             assert isinstance(row, GenerationJob)
             row.phase = "READING_SOURCES"
 
-    def _live_topic(self, claim: _Claim, topic_input: str, checkpoint: dict) -> dict:
-        if "topic" in checkpoint:
-            return checkpoint["topic"]
+    def _live_topic(
+        self, claim: _Claim, topic_input: str, checkpoint: dict, saved_key: str | None
+    ) -> dict:
         intent = checkpoint.get("intent")
         if intent is None:
+            scope = checkpoint.get("savedScope")
+            model_input = f"主题：{topic_input}\n学习范围：{scope}" if scope else topic_input
             intent = self._model_call(
                 claim,
                 self.ai.resolve_topic,
-                topic_input,
+                model_input,
                 slots_needed=4,
                 phase="RESOLVING_TOPIC",
             )
@@ -324,13 +356,17 @@ class Worker:
             with self.sessions.begin() as session:
                 row = self._owned(session, claim, lock=True)
                 assert isinstance(row, GenerationJob)
+                if saved_key and row.topic_title and scope:
+                    intent = {**intent, "title": row.topic_title, "scope": scope}
                 row.topic_title = intent["title"]
                 row.checkpoint = {**(row.checkpoint or {}), "intent": intent}
 
         passages = checkpoint.get("passages")
+        evidence_at = checkpoint.get("evidenceAt")
         if passages is None:
             passages = self._find_passages(claim, list(dict.fromkeys(intent["queries"])))
-            self._update_checkpoint(claim, passages=passages)
+            evidence_at = utcnow().isoformat()
+            self._update_checkpoint(claim, passages=passages, evidenceAt=evidence_at)
 
         insufficient = AIError(
             "SOURCE_INSUFFICIENT",
@@ -355,11 +391,12 @@ class Worker:
         if len(evidence) < MIN_PASSAGES or len({item["sourceUrl"] for item in evidence}) < 2:
             raise insufficient
         topic = {
-            "topicKey": "live-" + sha256(normalize(intent["title"]).encode()).hexdigest()[:59],
+            "topicKey": saved_key or live_topic_key(intent["title"]),
             "title": intent["title"],
             "scope": intent["scope"],
             "version": "web-v1",
             "evidence": evidence,
+            "evidenceAt": evidence_at,
         }
         self._update_checkpoint(claim, topic=topic)
         return topic

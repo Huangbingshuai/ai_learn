@@ -122,6 +122,21 @@ class Quiz(Base):
     rules_version: Mapped[str] = mapped_column(String(32))
 
 
+class SavedTopic(Base):
+    __tablename__ = "saved_topics"
+    __table_args__ = (Index("ix_saved_topics_recent", "user_id", "updated_at", "topic_key"),)
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    topic_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(100))
+    scope: Mapped[str] = mapped_column(String(240))
+    evidence: Mapped[list] = mapped_column(JSONB)
+    evidence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Attempt(Base):
     __tablename__ = "attempts"
     __table_args__ = (
