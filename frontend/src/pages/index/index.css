@@ -22,7 +22,46 @@
   padding-left: 17px;
   border-bottom: 1px solid var(--ink);
 }
-.screen-title { font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.screen-title {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+}
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: visible;
+}
+.brand-main {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: #302044;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+.brand-letter { display: block; text-shadow: 1px 1px 0 #ffb7a6; }
+.brand-light { transform: rotate(-7deg) translateY(1px); }
+.brand-know { transform: rotate(5deg) translateY(-1px); }
+.brand-tag {
+  display: block;
+  padding: 1px 5px 2px;
+  border: 1px solid #302044;
+  border-radius: 2px 7px 2px 7px;
+  background: #c9f26b;
+  box-shadow: 2px 2px 0 #ff765f;
+  color: #302044;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  transform: rotate(-3deg);
+}
 .back {
   display: flex;
   width: 32px;
