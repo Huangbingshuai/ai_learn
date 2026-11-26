@@ -260,7 +260,6 @@ export function ReceiptView({ receipt, onEvidence }: { receipt: AnswerReceipt; o
     <View className='speech'>
       <View className='speech-title'>
         <Text className='h2'>{isCorrect ? '为什么是这个答案？' : '原来如此！'}</Text>
-        {question.aiGenerated && <Tape>AI 生成</Tape>}
       </View>
       <Text className='speech-copy'>{receipt.explanation}</Text>
     </View>
