@@ -12,6 +12,7 @@ from app.db import (
     RateLimit,
     Record,
     RecordSummary,
+    utcnow,
 )
 from tests.topic_fixtures import create_test_quiz
 
@@ -45,6 +46,47 @@ def start_practice(client, headers, fingerprint, key="practice"):
         f"/v1/mistakes/{fingerprint}/practice",
         headers={**headers, "Idempotency-Key": key},
     )
+
+
+def test_practice_does_not_replace_learning_quiz_or_active_attempt(client, login, fixed_data, database):
+    headers = login()
+    original, _ = create_mistake(client, headers, fixed_data)
+    with database() as db:
+        fingerprint = db.scalar(select(MistakeItem.fingerprint))
+    practice = start_practice(client, headers, fingerprint)
+    assert practice.status_code == 201
+
+    topics = client.get('/v1/topics', headers=headers).json()['items']
+    topic = next(item for item in topics if item['topicKey'] == 'test-topic')
+    assert topic['attemptId'] == original['attemptId']
+    assert topic['totalQuestions'] == original['totalQuestions']
+    saved = client.post('/v1/topics/test-topic/quiz', headers=headers)
+    assert saved.status_code == 200
+    assert saved.json()['quizId'] == original['quizId']
+    active = client.get('/v1/attempts/active', headers=headers).json()['items']
+    assert [item['attemptId'] for item in active] == [original['attemptId']]
+
+
+def test_old_learning_attempt_on_practice_quiz_is_never_restored(client, login, fixed_data, database):
+    headers = login()
+    original, _ = create_mistake(client, headers, fixed_data)
+    with database() as db:
+        fingerprint = db.scalar(select(MistakeItem.fingerprint))
+    practice = start_practice(client, headers, fingerprint).json()
+    with database.begin() as db:
+        practice_attempt = db.get(Attempt, practice['attemptId'])
+        legacy = Attempt(user_id=practice_attempt.user_id, quiz_id=practice_attempt.quiz_id,
+                         purpose='LEARNING', idempotency_key='legacy-practice',
+                         rules_version=practice_attempt.rules_version, created_at=utcnow())
+        db.add(legacy)
+        db.flush()
+        legacy_id = legacy.id
+
+    topics = client.get('/v1/topics', headers=headers).json()['items']
+    assert next(item for item in topics if item['topicKey'] == 'test-topic')['attemptId'] == original['attemptId']
+    active = client.get('/v1/attempts/active', headers=headers).json()['items']
+    assert [item['attemptId'] for item in active] == [original['attemptId']]
+    assert client.get(f'/v1/attempts/{legacy_id}', headers=headers).status_code == 404
 
 
 def test_practice_uses_one_server_judged_question_without_record_or_summary(
@@ -147,6 +189,19 @@ def test_practice_requires_owned_mistake_and_conflicts_on_reused_key(client, log
         headers={**first_headers, "Idempotency-Key": "same-key"},
     )
     assert normal.status_code == 409
+
+
+def test_practice_rejects_mistake_after_its_topic_is_deleted(client, login, fixed_data):
+    headers = login()
+    create_mistake(client, headers, fixed_data)
+    with client.app.state.session_factory() as db:
+        fingerprint = db.scalar(select(MistakeItem.fingerprint))
+
+    deleted = client.delete("/v1/topics/test-topic", headers=headers)
+    practice = start_practice(client, headers, fingerprint)
+
+    assert deleted.status_code == 204
+    assert practice.status_code == 404
 
 
 def test_concurrent_practice_retries_create_one_attempt_and_reserve_one_quota(

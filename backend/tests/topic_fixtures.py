@@ -15,7 +15,7 @@ def get_topic_version(key: str, version: str) -> dict:
 
 
 def create_test_quiz(client, headers: dict[str, str]) -> dict[str, str]:
-    from app.db import GenerationJob, Quiz, utcnow
+    from app.db import GenerationJob, Quiz, SavedTopic, utcnow
     from app.domain.quizzes import RULES_VERSION, validate_quiz
 
     user_id = client.get("/v1/me", headers=headers).json()["userId"]
@@ -25,6 +25,11 @@ def create_test_quiz(client, headers: dict[str, str]) -> dict[str, str]:
     job_id = str(uuid4())
     settings = client.app.state.settings
     with client.app.state.session_factory.begin() as db:
+        if db.get(SavedTopic, (user_id, "test-topic")) is None:
+            db.add(SavedTopic(
+                user_id=user_id, topic_key="test-topic", title="测试练习", original_input="测试练习",
+                scope="Test scope", evidence=topic["evidence"], evidence_at=now, updated_at=now,
+            ))
         db.add(GenerationJob(
             id=job_id, user_id=user_id, source="TOPIC", topic_key="test-topic", topic_version=None,
             input_digest="b" * 64, idempotency_key=f"test-{uuid4()}", status="SUCCEEDED",

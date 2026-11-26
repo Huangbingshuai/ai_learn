@@ -446,12 +446,27 @@ def test_summary_sends_only_the_learning_snapshot_and_accepts_citations(provider
     prompt = requests[0]["messages"][1]["content"]
     assert "private-" not in prompt
     snapshot = json.loads(prompt)
-    assert set(snapshot) == {"topicTitle", "takeaways", "takeawayEvidence", "answers"}
+    assert set(snapshot) == {"topicTitle", "takeaways", "takeawayEvidence", "answers", "allowedCitations"}
+    assert snapshot["allowedCitations"]["wrongQuestionIds"] == ["q01"]
+    assert snapshot["allowedCitations"]["questionEvidence"]["q01"] == ["e1"]
     assert snapshot["takeawayEvidence"] == [{"evidenceId": "e2", "text": "月光来自反射。"}]
     assert snapshot["answers"][0]["question"]["options"][0] == {"optionId": "A", "text": "正确"}
     assert snapshot["answers"][0]["selectedOptionIds"] == ["B"]
     assert snapshot["answers"][0]["isCorrect"] is False
     assert snapshot["answers"][0]["evidence"] == [{"evidenceId": "e1", "text": "月球反射太阳光。"}]
+
+
+def test_summary_retry_includes_safe_validation_feedback(provider, record):
+    result = {
+        "knowledgeReview": [{"text": "月光来自反射。", "questionIds": ["q01"], "evidenceIds": []}],
+        "mistakeNotes": [{"text": "复习月光。", "questionIds": ["q01"], "evidenceIds": []}],
+        "reviewSuggestions": [{"text": "解释月光。", "questionIds": ["q01"], "evidenceIds": []}],
+    }
+    record["validationFeedback"] = "A mistake note must only reference actual mistakes"
+    adapter, requests = provider(content=json.dumps(result))
+    adapter.summarize(record)
+    snapshot = json.loads(requests[0]["messages"][1]["content"])
+    assert snapshot["validationFeedback"] == record["validationFeedback"]
 
 
 def test_summary_rejects_wrong_field_types(ai_module, provider, record):

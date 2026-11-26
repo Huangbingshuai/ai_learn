@@ -7,13 +7,13 @@ from binascii import Error as Base64Error
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Path, Query, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 
 from app.api.dependencies import DB, CurrentUser
 from app.api.errors import ApiError, ErrorView, not_found
-from app.db import MistakeItem, MistakeStatus, utcnow
+from app.db import MistakeItem, MistakeStatus, SavedTopic, utcnow
 
 router = APIRouter(responses={401: {"model": ErrorView}, 404: {"model": ErrorView}})
 StatusValue = Literal["to_review", "mastered"]
@@ -69,6 +69,15 @@ def _view(item: MistakeItem) -> MistakeView:
     )
 
 
+def _saved_topic_filter(user_id: str):
+    return exists(
+        select(SavedTopic.topic_key).where(
+            SavedTopic.user_id == user_id,
+            SavedTopic.topic_key == MistakeItem.topic_key,
+        )
+    )
+
+
 def _encode_cursor(item: MistakeItem) -> str:
     value = json.dumps(
         {"at": item.last_wrong_at.isoformat(), "fingerprint": item.fingerprint},
@@ -94,12 +103,15 @@ def _decode_cursor(cursor: str) -> tuple[datetime, str]:
 def list_mistakes(
     db: DB,
     user_id: CurrentUser,
-    status: StatusValue = "to_review",
+    status: Annotated[StatusValue | None, Query()] = None,
     topicKey: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> MistakePage:
-    filters = [MistakeItem.user_id == user_id, MistakeItem.status == status.upper()]
+    saved_topic = _saved_topic_filter(user_id)
+    filters = [MistakeItem.user_id == user_id, saved_topic]
+    if status is not None:
+        filters.append(MistakeItem.status == status.upper())
     if topicKey is not None:
         filters.append(MistakeItem.topic_key == topicKey)
 
@@ -124,19 +136,16 @@ def list_mistakes(
     )
     has_more = len(items) > limit
     items = items[:limit]
-    pending_count = db.scalar(
-        select(func.count())
-        .select_from(MistakeItem)
-        .where(
-            MistakeItem.user_id == user_id,
-            MistakeItem.status == MistakeStatus.TO_REVIEW.value,
-        )
-    )
+    count_filters = [MistakeItem.user_id == user_id, saved_topic]
+    if status is not None:
+        count_filters.append(MistakeItem.status == status.upper())
+    pending_count = db.scalar(select(func.count()).select_from(MistakeItem).where(*count_filters))
     topics = db.execute(
-        select(MistakeItem.topic_key, MistakeItem.topic_title)
-        .where(MistakeItem.user_id == user_id)
+        select(SavedTopic.topic_key, SavedTopic.title)
+        .join(MistakeItem, MistakeItem.topic_key == SavedTopic.topic_key)
+        .where(SavedTopic.user_id == user_id, MistakeItem.user_id == user_id)
         .distinct()
-        .order_by(MistakeItem.topic_title, MistakeItem.topic_key)
+        .order_by(SavedTopic.title, SavedTopic.topic_key)
     ).all()
     return MistakePage(
         items=[_view(item) for item in items],
@@ -156,6 +165,7 @@ def get_mistake(
         select(MistakeItem).where(
             MistakeItem.user_id == user_id,
             MistakeItem.fingerprint == fingerprint,
+            _saved_topic_filter(user_id),
         )
     )
     if item is None:
@@ -176,6 +186,7 @@ def update_mistake_status(
             .where(
                 MistakeItem.user_id == user_id,
                 MistakeItem.fingerprint == fingerprint,
+                _saved_topic_filter(user_id),
             )
             .with_for_update()
         )
@@ -186,3 +197,25 @@ def update_mistake_status(
         item.updated_at = utcnow()
         db.flush()
         return _view(item)
+
+
+@router.delete("/mistakes/{fingerprint}", status_code=204)
+def remove_mistake(
+    db: DB,
+    user_id: CurrentUser,
+    fingerprint: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+) -> Response:
+    with db.begin():
+        item = db.scalar(
+            select(MistakeItem)
+            .where(
+                MistakeItem.user_id == user_id,
+                MistakeItem.fingerprint == fingerprint,
+                _saved_topic_filter(user_id),
+            )
+            .with_for_update()
+        )
+        if item is None:
+            raise not_found()
+        db.delete(item)
+    return Response(status_code=204)

@@ -60,7 +60,11 @@ def test_replaying_the_same_wrong_answer_does_not_count_twice(client, login, fix
     first = answer_wrong(client, headers, attempt_id, fixed_data["questions"][0])
     replay = answer_wrong(client, headers, attempt_id, fixed_data["questions"][0])
 
-    assert replay.json() == first.json()
+    replay_body = replay.json()
+    first_body = first.json()
+    assert first_body.pop("coinSettlementNew") is True
+    assert replay_body.pop("coinSettlementNew") is False
+    assert replay_body == first_body
     with database() as db:
         item = db.scalar(select(MistakeItem))
         event_count = db.scalar(select(func.count()).select_from(MistakeAnswerEvent))

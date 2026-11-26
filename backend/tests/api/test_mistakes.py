@@ -2,7 +2,24 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.db import MistakeItem, utcnow
+from app.db import MistakeItem, SavedTopic, utcnow
+
+
+def seed_topic(database, user_id, topic):
+    now = utcnow()
+    with database.begin() as db:
+        db.add(
+            SavedTopic(
+                user_id=user_id,
+                topic_key=topic,
+                title=topic.title(),
+                original_input=topic,
+                scope="Test scope",
+                evidence=[],
+                evidence_at=now,
+                updated_at=now,
+            )
+        )
 
 
 def seed_item(database, user_id, suffix, *, status="TO_REVIEW", minutes_ago=0, topic="seasons"):
@@ -29,11 +46,14 @@ def seed_item(database, user_id, suffix, *, status="TO_REVIEW", minutes_ago=0, t
     return fingerprint
 
 
-def test_mistake_list_is_user_scoped_and_reports_pending_count_and_topics(client, login, database):
+def test_mistake_list_is_user_scoped_and_includes_all_saved_mistakes(client, login, database):
     first_headers = login("device-first")
     second_headers = login("device-second")
     first_user = client.get("/v1/me", headers=first_headers).json()["userId"]
     second_user = client.get("/v1/me", headers=second_headers).json()["userId"]
+    seed_topic(database, first_user, "seasons")
+    seed_topic(database, first_user, "moon")
+    seed_topic(database, second_user, "moon")
     seed_item(database, first_user, "a", topic="seasons")
     seed_item(database, first_user, "b", status="MASTERED", topic="moon")
     seed_item(database, second_user, "c", topic="moon")
@@ -42,14 +62,16 @@ def test_mistake_list_is_user_scoped_and_reports_pending_count_and_topics(client
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [item["fingerprint"] for item in body["items"]] == ["a" * 64]
-    assert body["pendingCount"] == 1
+    assert [item["fingerprint"] for item in body["items"]] == ["b" * 64, "a" * 64]
+    assert body["pendingCount"] == 2
     assert {topic["topicKey"] for topic in body["topics"]} == {"seasons", "moon"}
 
 
 def test_mistake_list_filters_status_and_topic_and_uses_stable_cursor(client, login, database):
     headers = login()
     user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    seed_topic(database, user_id, "seasons")
+    seed_topic(database, user_id, "moon")
     seed_item(database, user_id, "a", minutes_ago=1, topic="seasons")
     seed_item(database, user_id, "b", minutes_ago=1, topic="moon")
     seed_item(database, user_id, "c", status="MASTERED", minutes_ago=3, topic="moon")
@@ -72,6 +94,7 @@ def test_mistake_detail_and_status_updates_only_affect_owner(client, login, data
     headers = login("device-first")
     other_headers = login("device-second")
     user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    seed_topic(database, user_id, "seasons")
     fingerprint = seed_item(database, user_id, "d")
 
     detail = client.get(f"/v1/mistakes/{fingerprint}", headers=headers)
@@ -101,6 +124,59 @@ def test_mistake_detail_and_status_updates_only_affect_owner(client, login, data
     with database() as db:
         stored = db.scalar(select(MistakeItem).where(MistakeItem.fingerprint == fingerprint))
     assert stored.mastered_at is None
+
+
+def test_mistake_list_hides_items_for_deleted_topics_and_keeps_only_saved_topics(
+    client, login, database
+):
+    headers = login()
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    seed_topic(database, user_id, "current-topic")
+    seed_item(database, user_id, "a", topic="current-topic")
+    seed_item(database, user_id, "b", topic="deleted-topic")
+
+    response = client.get("/v1/mistakes", headers=headers)
+    filtered = client.get("/v1/mistakes?topicKey=deleted-topic", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert [item["fingerprint"] for item in response.json()["items"]] == ["a" * 64]
+    assert response.json()["pendingCount"] == 1
+    assert {topic["topicKey"] for topic in response.json()["topics"]} == {"current-topic"}
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["items"] == []
+    assert filtered.json()["pendingCount"] == 1
+
+
+def test_deleted_topic_mistake_is_hidden_from_detail_and_status_updates(client, login, database):
+    headers = login()
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    fingerprint = seed_item(database, user_id, "f", topic="deleted-topic")
+
+    detail = client.get(f"/v1/mistakes/{fingerprint}", headers=headers)
+    changed = client.patch(
+        f"/v1/mistakes/{fingerprint}", json={"status": "mastered"}, headers=headers
+    )
+
+    assert detail.status_code == 404
+    assert changed.status_code == 404
+
+
+def test_removing_mistake_deletes_only_the_current_users_item(client, login, database):
+    headers = login("device-first")
+    other_headers = login("device-second")
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    seed_topic(database, user_id, "seasons")
+    fingerprint = seed_item(database, user_id, "9", topic="seasons")
+
+    forbidden = client.delete(f"/v1/mistakes/{fingerprint}", headers=other_headers)
+    removed = client.delete(f"/v1/mistakes/{fingerprint}", headers=headers)
+    missing = client.delete(f"/v1/mistakes/{fingerprint}", headers=headers)
+
+    assert forbidden.status_code == 404
+    assert removed.status_code == 204
+    assert missing.status_code == 404
+    with database() as db:
+        assert db.scalar(select(MistakeItem).where(MistakeItem.fingerprint == fingerprint)) is None
 
 
 def test_mistake_api_rejects_bad_cursor_or_status_and_hides_unknown_items(client, login):

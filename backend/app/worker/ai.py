@@ -121,6 +121,10 @@ reviewSuggestions。mistakeNotes 只解释 isCorrect 为 false 的题目，说�
 每条至少引用现有题号或证据标识之一。每条都必须使用这三个字段：text、questionIds（数组）、
 evidenceIds（数组）；即使只引用一个题目或依据，也必须放进数组，不能写 questionId 或 evidenceId。
 mistakeNotes 每条必须引用实际错题。全对时返回空的 mistakeNotes。
+allowedCitations 列出可用的题目和证据 ID；mistakeNotes 只能使用 wrongQuestionIds 中的题目，
+其 evidenceIds 只能来自这些错题各自的 questionEvidence。不要重复引用，不要编造或改写 ID。
+有错题时 mistakeNotes 至少一条，全部答对时必须为空。每项用简短中文，优先引用对应题目 ID。
+如果输入包含 validationFeedback，修正上次校验失败的原因，重新输出完整总结。
 格式示例（题号、证据标识和内容以实际输入为准）：
 {"knowledgeReview":[{"text":"光能在真空中传播。","questionIds":["q01"],"evidenceIds":["e01"]}],
 "mistakeNotes":[],"reviewSuggestions":[{"text":"尝试解释光的传播是否需要介质。",
@@ -257,6 +261,14 @@ def _snapshot(record: dict) -> dict:
         "takeaways": [_select(item, "text", "evidenceIds") for item in record["takeaways"]],
         "takeawayEvidence": _evidence(record.get("takeawayEvidence", [])),
         "answers": answers,
+        **({"validationFeedback": record["validationFeedback"]} if record.get("validationFeedback") else {}),
+        "allowedCitations": {
+            "wrongQuestionIds": [a["question"]["questionId"] for a in answers if not a["isCorrect"]],
+            "questionEvidence": {
+                a["question"]["questionId"]: [e["evidenceId"] for e in a["evidence"]]
+                for a in answers
+            },
+        },
     }
 
 

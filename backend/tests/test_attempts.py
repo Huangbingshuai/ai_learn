@@ -132,8 +132,17 @@ def test_unsubmitted_selection_is_saved_to_account_and_restored(client, play):
     assert next_question["draftOptionIds"] == []
 
 
-def test_active_attempts_and_previous_answers_are_account_scoped(client, play, login, fixed_data):
+def test_active_attempts_and_previous_answers_are_account_scoped(client, play, login, fixed_data, database):
+    from app.db import SavedTopic, utcnow
+
     headers, _, attempt = play
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    now = utcnow()
+    with database.begin() as db:
+        db.add(SavedTopic(
+            user_id=user_id, topic_key="seasons", title="测试题组", original_input="测试题组",
+            scope="仅供测试", evidence=[], evidence_at=now, updated_at=now,
+        ))
     question = fixed_data["questions"][0]
     submitted = choose(client, headers, attempt["attemptId"], question["questionId"], question["correctOptionIds"])
     assert submitted.status_code == 200
@@ -147,6 +156,15 @@ def test_active_attempts_and_previous_answers_are_account_scoped(client, play, l
     assert client.get(
         f"/v1/attempts/{attempt['attemptId']}/answers/0", headers=login("another-user")
     ).status_code == 404
+
+
+def test_active_attempts_hide_legacy_quizzes_without_a_saved_user_topic(client, play):
+    headers, _, _ = play
+
+    active = client.get("/v1/attempts/active", headers=headers)
+
+    assert active.status_code == 200
+    assert active.json() == {"items": []}
 
 
 def finish(client, headers, attempt_id, fixed_data, *, wrong=False, skip_last=False):
@@ -184,9 +202,12 @@ def test_first_submission_is_locked_and_returns_sources(client, play, fixed_data
     assert first["evidence"][0]["sourceUrl"].startswith("https://")
     assert first["explanation"]
     response = choose(client, headers, aid, qid, ["o2"]).json()
-    assert response == first
+    assert response["coinSettlementNew"] is False
     assert first["coinDelta"] == 10
+    assert first["coinSettlementNew"] is True
     assert first["coinBalance"] == 10
+    reviewed = client.get(f"/v1/attempts/{aid}/answers/0", headers=headers).json()
+    assert reviewed["coinSettlementNew"] is False
     next_question = client.get(f"/v1/attempts/{aid}", headers=headers).json()["question"]
     assert next_question["index"] == 1
 
@@ -226,6 +247,8 @@ def test_coins_are_settled_once_per_user_and_question_across_attempts(
         client, headers, restarted["attemptId"], restarted["question"]["questionId"], [wrong]
     ).json()
     assert (duplicate["coinDelta"], duplicate["coinBalance"]) == (0, 10)
+    assert duplicate["coinSettlementNew"] is False
+
     assert client.get("/v1/me", headers=headers).json()["coinBalance"] == 10
 
 
@@ -239,6 +262,30 @@ def test_wrong_answer_at_zero_does_not_create_negative_balance(client, play, fix
     )
     receipt = choose(client, headers, attempt["attemptId"], question["questionId"], [wrong]).json()
     assert (receipt["coinDelta"], receipt["coinBalance"]) == (0, 0)
+    assert receipt["coinSettlementNew"] is True
+
+
+def test_wrong_answer_deducts_five_without_exceeding_balance(client, play, fixed_data, database):
+    from app.db import User
+
+    headers, _, attempt = play
+    current_question = attempt["question"]
+    question = next(
+        item for item in fixed_data["questions"] if item["questionId"] == current_question["questionId"]
+    )
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    with database.begin() as db:
+        db.get(User, user_id).coin_balance = 10
+    wrong = next(
+        option["optionId"]
+        for option in question["options"]
+        if option["optionId"] not in question["correctOptionIds"]
+    )
+    penalty = choose(
+        client, headers, attempt["attemptId"], current_question["questionId"], [wrong]
+    ).json()
+    assert (penalty["coinDelta"], penalty["coinBalance"]) == (-5, 5)
+    assert penalty["coinSettlementNew"] is True
 
 
 @pytest.mark.parametrize("complete_set", [True, False])
@@ -265,6 +312,7 @@ def test_concurrent_choices_share_the_first_receipt(client, play):
                 lambda option: choose(client, headers, aid, qid, [option]).json(), ["o1", "o2"]
             )
         )
+    assert {result.pop("coinSettlementNew") for result in results} == {False, True}
     assert results[0] == results[1]
 
 
@@ -286,6 +334,7 @@ def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_d
                 range(2),
             )
         )
+    assert {result.pop("coinSettlementNew") for result in results} == {False, True}
     assert results[0] == results[1]
     rid = results[0]["recordId"]
     detail = client.get(f"/v1/records/{rid}", headers=headers).json()

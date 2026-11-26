@@ -3,12 +3,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import select, tuple_, update
+from sqlalchemy import delete, select, tuple_, update
 
 from app.api.attempts import QuizView
 from app.api.dependencies import DB, CurrentUser
 from app.api.errors import ApiError, ErrorView, not_found
-from app.db import Attempt, Quiz, SavedTopic, utcnow
+from app.db import Attempt, FavoriteItem, GenerationJob, Quiz, SavedTopic, utcnow
 from app.domain.topics import TopicView
 
 router = APIRouter(
@@ -48,7 +48,8 @@ def list_topics(
     attempts = db.execute(
         select(Attempt, Quiz)
         .join(Quiz, Quiz.id == Attempt.quiz_id)
-        .where(Attempt.user_id == user_id)
+        .join(GenerationJob, GenerationJob.id == Quiz.job_id)
+        .where(Attempt.user_id == user_id, Attempt.purpose == "LEARNING", GenerationJob.source != "PRACTICE")
         .order_by(Attempt.created_at.desc())
     ).all()
     latest: dict[str, tuple[Attempt, Quiz]] = {}
@@ -87,6 +88,7 @@ def delete_saved_topic(topic_key: str, db: DB, user_id: CurrentUser) -> Response
         )
         if topic is None:
             raise not_found()
+        db.execute(delete(FavoriteItem).where(FavoriteItem.user_id == user_id, FavoriteItem.topic_key == topic_key))
         db.delete(topic)
     return Response(status_code=204)
 
@@ -98,10 +100,15 @@ def open_saved_quiz(topic_key: str, db: DB, user_id: CurrentUser, request: Reque
             raise not_found()
         quiz = db.scalar(
             select(Quiz)
-            .where(Quiz.user_id == user_id, Quiz.topic_key == topic_key)
+            .join(GenerationJob, GenerationJob.id == Quiz.job_id)
+            .where(
+                Quiz.user_id == user_id,
+                Quiz.topic_key == topic_key,
+                GenerationJob.source != "PRACTICE",
+            )
             .order_by(Quiz.created_at.desc(), Quiz.id.desc())
             .limit(1)
-            .with_for_update()
+            .with_for_update(of=Quiz)
         )
         if quiz is None:
             raise ApiError(404, "SAVED_QUIZ_UNAVAILABLE", "这组题尚未保存，请重新生成。")

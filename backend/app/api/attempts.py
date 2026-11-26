@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.api.dependencies import DB, CurrentUser, IdempotencyKey, digest
@@ -15,11 +15,13 @@ from app.db import (
     Attempt,
     AttemptAnswer,
     CoinSettlement,
+    FavoriteItem,
     GenerationJob,
     MistakeItem,
     Quiz,
     Record,
     RecordSummary,
+    SavedTopic,
     User,
     new_id,
     utcnow,
@@ -155,8 +157,13 @@ def start_attempt(
         if attempt is not None:
             if attempt.quiz_id != quiz_id:
                 raise key_conflict()
-            return _attempt_view(db, attempt, _owned_quiz(db, quiz_id, user_id))
+            existing_quiz = _owned_quiz(db, quiz_id, user_id)
+            if db.get(GenerationJob, existing_quiz.job_id).source == "PRACTICE":
+                raise key_conflict()
+            return _attempt_view(db, attempt, existing_quiz)
         quiz = _owned_quiz(db, quiz_id, user_id)
+        if db.get(GenerationJob, quiz.job_id).source == "PRACTICE":
+            raise not_found()
         now = utcnow()
         if quiz.expires_at <= now:
             raise expired_quiz()
@@ -190,6 +197,7 @@ def start_attempt(
         return _attempt_view(db, attempt, quiz)
 
 
+@router.post("/favorites/{fingerprint}/practice", status_code=201)
 @router.post("/mistakes/{fingerprint}/practice", status_code=201)
 def start_mistake_practice(
     fingerprint: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
@@ -198,6 +206,8 @@ def start_mistake_practice(
     idempotency_key: IdempotencyKey,
     request: Request,
 ) -> AttemptView:
+    favorite_practice = request.url.path.startswith("/v1/favorites/")
+    collection = FavoriteItem if favorite_practice else MistakeItem
     with db.begin():
         existing = db.scalar(
             select(Attempt)
@@ -214,8 +224,17 @@ def start_mistake_practice(
             return _attempt_view(db, existing, quiz)
 
         item = db.scalar(
-            select(MistakeItem)
-            .where(MistakeItem.user_id == user_id, MistakeItem.fingerprint == fingerprint)
+            select(collection)
+            .where(
+                collection.user_id == user_id,
+                collection.fingerprint == fingerprint,
+                exists(
+                    select(SavedTopic.topic_key).where(
+                        SavedTopic.user_id == user_id,
+                        SavedTopic.topic_key == collection.topic_key,
+                    )
+                ),
+            )
             .with_for_update()
         )
         if item is None:
@@ -297,7 +316,7 @@ def start_mistake_practice(
                 topic_key=item.topic_key,
                 topic_title=item.topic_title,
                 content={"questions": [question]},
-                evidence=item.latest_receipt.get("evidence", []),
+                evidence=item.evidence if favorite_practice else item.latest_receipt.get("evidence", []),
                 ai_generated=bool(question.get("aiGenerated", False)),
                 created_at=now,
                 expires_at=now + timedelta(hours=settings.quiz_hours),
@@ -342,10 +361,17 @@ def active_attempts(db: DB, user_id: CurrentUser) -> ActiveAttempts:
     rows = db.execute(
         select(Attempt, Quiz)
         .join(Quiz, Quiz.id == Attempt.quiz_id)
+        .join(GenerationJob, GenerationJob.id == Quiz.job_id)
         .where(
             Attempt.user_id == user_id,
             Attempt.status == "ACTIVE",
+            Attempt.purpose == "LEARNING",
+            GenerationJob.source != "PRACTICE",
             Quiz.expires_at > utcnow(),
+            exists().where(
+                SavedTopic.user_id == user_id,
+                SavedTopic.topic_key == Quiz.topic_key,
+            ),
         )
         .order_by(Attempt.created_at.desc())
     ).all()
@@ -359,7 +385,10 @@ def read_attempt(attempt_id: UUID, db: DB, user_id: CurrentUser) -> AttemptView:
     )
     if attempt is None:
         raise not_found()
-    return _attempt_view(db, attempt, _owned_quiz(db, attempt.quiz_id, user_id))
+    quiz = _owned_quiz(db, attempt.quiz_id, user_id)
+    if attempt.purpose == "LEARNING" and db.get(GenerationJob, quiz.job_id).source == "PRACTICE":
+        raise not_found()
+    return _attempt_view(db, attempt, quiz)
 
 
 @router.put("/attempts/{attempt_id}/draft")
@@ -417,6 +446,7 @@ class AnswerReceipt(BaseModel):
     totalQuestions: int
     coinDelta: int = 0
     coinBalance: int = 0
+    coinSettlementNew: bool = False
     recordId: str | None = None
 
 
@@ -437,10 +467,14 @@ def read_attempt_answer(
     )
     if answer is None:
         raise not_found()
-    return AnswerReceipt.model_validate(answer.receipt)
+    receipt = AnswerReceipt.model_validate(answer.receipt)
+    receipt.coinSettlementNew = False
+    return receipt
 
 
-def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tuple[int, int]:
+def _settle_coins(
+    db: DB, user_id: str, question: dict, is_correct: bool
+) -> tuple[int, int, bool]:
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise not_found()
@@ -452,8 +486,8 @@ def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tup
         )
     )
     if previous is not None:
-        return 0, user.coin_balance
-    delta = 10 if is_correct else max(-5, -user.coin_balance)
+        return 0, user.coin_balance, False
+    delta = 10 if is_correct else -min(5, user.coin_balance)
     user.coin_balance += delta
     db.add(
         CoinSettlement(
@@ -464,7 +498,7 @@ def _settle_coins(db: DB, user_id: str, question: dict, is_correct: bool) -> tup
             created_at=utcnow(),
         )
     )
-    return delta, user.coin_balance
+    return delta, user.coin_balance, True
 
 
 def _save_completed_record(
@@ -528,7 +562,9 @@ def submit_answer(
             raise not_found()
         previous = db.get(AttemptAnswer, (attempt.id, question_id))
         if previous is not None:
-            return AnswerReceipt.model_validate(previous.receipt)
+            receipt = AnswerReceipt.model_validate(previous.receipt)
+            receipt.coinSettlementNew = False
+            return receipt
         if attempt.status != "ACTIVE":
             raise ApiError(409, "ATTEMPT_CLOSED", "本次练习已结束。")
         quiz = _owned_quiz(db, attempt.quiz_id, user_id)
@@ -562,10 +598,14 @@ def submit_answer(
             totalQuestions=len(questions),
             coinDelta=0,
             coinBalance=0,
+            coinSettlementNew=False,
         )
-        receipt.coinDelta, receipt.coinBalance = _settle_coins(
-            db, user_id, question, receipt.isCorrect
-        )
+        if attempt.purpose == "PRACTICE":
+            receipt.coinBalance = db.get(User, user_id).coin_balance
+        else:
+            receipt.coinDelta, receipt.coinBalance, receipt.coinSettlementNew = _settle_coins(
+                db, user_id, question, receipt.isCorrect
+            )
         if attempt.answered_count == len(questions):
             attempt.status = "PASSED"
             if attempt.purpose != "PRACTICE":

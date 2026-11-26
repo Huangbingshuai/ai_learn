@@ -460,7 +460,7 @@ class Worker:
 
     def _summarize(self, claim: _Claim) -> None:
         with self.sessions.begin() as session:
-            self._owned(session, claim)
+            summary_row = self._owned(session, claim)
             record = session.get(Record, claim.row_id)
             if record is None:
                 raise _LeaseLost()
@@ -470,11 +470,21 @@ class Worker:
                 "takeawayEvidence": record.takeaway_evidence,
                 "answers": record.answers,
             }
+            if summary_row.error_code == "SUMMARY_QUALITY_FAILED" and summary_row.error_message:
+                snapshot["validationFeedback"] = summary_row.error_message
         raw = self._model_call(claim, self.ai.summarize, snapshot)
         try:
             summary = validate_summary(raw, snapshot).model_dump(mode="json", by_alias=True)
-        except ValueError:
-            raise AIError("SUMMARY_QUALITY_FAILED", "学习总结未通过校验。", True) from None
+        except ValueError as error:
+            logger.warning("Summary validation failed task=%s error_type=%s", claim.row_id, type(error).__name__)
+            reasons = {
+                "Mistake notes must reflect the actual score",
+                "Invalid learning record citation",
+                "A mistake note must only reference actual mistakes",
+                "Mistake evidence must correspond to the cited wrong answers",
+            }
+            reason = str(error) if str(error) in reasons else "学习总结的引用或格式不符合要求。"
+            raise AIError("SUMMARY_QUALITY_FAILED", reason, True) from None
         with self.sessions.begin() as session:
             row = self._owned(session, claim, lock=True)
             assert isinstance(row, RecordSummary)

@@ -62,6 +62,20 @@ class MistakeStatus(StrEnum):
     MASTERED = "MASTERED"
 
 
+class FavoriteItem(Base):
+    __tablename__ = "favorite_items"
+    __table_args__ = (UniqueConstraint("user_id", "fingerprint", name="uq_favorite_user_fingerprint"),)
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    evidence: Mapped[list] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class MistakeItem(Base):
     __tablename__ = "mistake_items"
     __table_args__ = (

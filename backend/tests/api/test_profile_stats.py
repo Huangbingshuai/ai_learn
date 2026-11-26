@@ -1,4 +1,5 @@
 from app.db import Record, new_id, utcnow
+from tests.topic_fixtures import create_test_quiz
 
 
 def test_profile_stats_aggregate_only_the_authenticated_users_completed_learning(
@@ -64,3 +65,23 @@ def test_profile_stats_return_zeroes_before_any_completed_learning(client, login
         "correctAnswers": 0,
         "accuracyPercent": 0,
     }
+
+
+def test_completed_sets_increases_only_after_last_question(client, login, fixed_data):
+    headers = login()
+    quiz = create_test_quiz(client, headers)
+    started = client.post('/v1/attempts', json=quiz, headers={**headers, 'Idempotency-Key': 'stats-full-set'})
+    assert started.status_code == 201
+    attempt_id = started.json()['attemptId']
+    questions = fixed_data['questions']
+    for index, question in enumerate(questions):
+        before = client.get('/v1/me/stats', headers=headers).json()
+        assert before['completedSets'] == 0
+        response = client.put(
+            f"/v1/attempts/{attempt_id}/answers/{question['questionId']}",
+            json={'selectedOptionIds': question['correctOptionIds']}, headers=headers,
+        )
+        assert response.status_code == 200, (index, response.text)
+    stats = client.get('/v1/me/stats', headers=headers).json()
+    assert stats['completedSets'] == 1
+    assert stats['answeredQuestions'] == len(questions)

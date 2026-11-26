@@ -367,6 +367,37 @@ def test_summary_with_existing_citations_finishes_without_mutating_record(
         assert session.get(db.Record, record_id).correct_count == 12
 
 
+def test_summary_retry_supplies_validation_reason_and_keeps_citation_checks(
+    worker_module, database, settings, quiz
+):
+    record_id = queue_summary(database, settings, quiz)
+    with database.begin() as session:
+        record = session.get(db.Record, record_id)
+        answers = deepcopy(record.answers)
+        answers[0]['isCorrect'] = False
+        record.answers = answers
+
+    ai = FakeAI()
+    item = {'text': '回顾地轴倾斜。', 'questionIds': ['seasons-01'], 'evidenceIds': ['earth-tilt']}
+    bad = {'text': '回顾错题。', 'questionIds': ['seasons-02'], 'evidenceIds': []}
+    def summarize(snapshot):
+        if 'validationFeedback' not in snapshot:
+            return {'knowledgeReview': [item], 'mistakeNotes': [bad], 'reviewSuggestions': [item]}
+        assert snapshot['validationFeedback'] == 'A mistake note must only reference actual mistakes'
+        return {'knowledgeReview': [item], 'mistakeNotes': [item], 'reviewSuggestions': [item]}
+
+    ai.summary = summarize
+    worker = worker_module.Worker(settings, database, ai)
+    assert worker.process_once()
+    with database.begin() as session:
+        summary = session.get(db.RecordSummary, record_id)
+        assert summary.status == 'QUEUED'
+        summary.next_run_at = db.utcnow()
+    assert worker.process_once()
+    with database() as session:
+        assert session.get(db.RecordSummary, record_id).status == 'SUCCEEDED'
+
+
 def test_cleanup_expires_queued_tasks_and_preserves_a_live_lease(worker_module, database, settings):
     dead = queue_generation(database, settings, expires_at=db.utcnow() - timedelta(seconds=1))
     live = queue_generation(
