@@ -4,13 +4,48 @@ import { api } from '../api/client'
 import { messageForError, RequestError } from '../api/request'
 import type { AiSummary, Evidence, LearningRecord, RecordItem, SummaryEntry } from '../api/types'
 import happy from '../assets/student-happy.webp'
-import { Action, ComicRow, ErrorNote, StatusPanel, Tape } from '../components/comic'
+import thoughtful from '../assets/student-thoughtful.webp'
+import discover from '../assets/student-discover.webp'
+import confident from '../assets/student-confident.webp'
+import celebrate from '../assets/student-celebrate.webp'
+import { Action, ComicRow, ErrorNote, StatusPanel } from '../components/comic'
 import { FIRST_POLL_DELAY, formatCompletionDate, makeKey, nextPollDelay, questionTypeLabels } from './flow'
 import { ProgressMeter, ReceiptView } from './quiz'
+import { resultTier, resultTitles } from './result-style'
 
-export function HistoryScreen({ onHome, onRecord }: { onHome: () => void; onRecord: (id: string) => void }) {
+const resultPortraits = { explore: thoughtful, discover, progress: happy, excellent: confident, perfect: celebrate }
+
+function ResultBanner({ record, historical }: { record: LearningRecord; historical: boolean }) {
+  const tier = resultTier(record.correctCount, record.totalQuestions)
+  const [imageFailed, setImageFailed] = useState(false)
+  useEffect(() => { setImageFailed(false) }, [record.recordId])
+  return <View className={`result-banner result-${tier}${historical ? ' is-historical' : ''}`}>
+    <View className='result-art' aria-hidden />
+    <Text className='result-heading'>{resultTitles[tier]}</Text>
+    <Text className='result-line result-topic-line'>{record.topicTitle} · 完成 {record.totalQuestions} 题</Text>
+    {historical && <Text className='result-line'>完成时间 · {formatCompletionDate(record.completedAt)}</Text>}
+    <Text className='result-score tape paper' aria-label={`答对 ${record.correctCount} 道题，共 ${record.totalQuestions} 道题`}>
+      {record.correctCount} / {record.totalQuestions}
+    </Text>
+    <Text className='result-line'>本次答对</Text>
+    {!imageFailed && <Image className='result-student' src={resultPortraits[tier]} mode='widthFix' aria-hidden onError={() => setImageFailed(true)} />}
+  </View>
+}
+
+export function HistoryScreen({ onHome, onQuestionBank, onRecord }: {
+  onHome: () => void
+  onQuestionBank: () => void
+  onRecord: (id: string) => void
+}) {
+  type Period = 'all' | '7d' | '30d'
+  const periods: { id: Period; label: string }[] = [
+    { id: 'all', label: '全部' },
+    { id: '7d', label: '近7天' },
+    { id: '30d', label: '近30天' },
+  ]
   const [items, setItems] = useState<RecordItem[]>([])
   const [cursor, setCursor] = useState<string | null>()
+  const [period, setPeriod] = useState<Period>('all')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(true)
   const inFlight = useRef(false)
@@ -22,13 +57,16 @@ export function HistoryScreen({ onHome, onRecord }: { onHome: () => void; onReco
     return () => { mounted.current = false }
   }, [])
 
-  async function load(after?: string) {
+  async function load(after?: string, selectedPeriod: Period = period) {
     if (inFlight.current) return
     inFlight.current = true
     setPending(true)
     setError('')
     try {
-      const page = await api.records(after)
+      const since = selectedPeriod === 'all'
+        ? undefined
+        : new Date(Date.now() - (selectedPeriod === '7d' ? 7 : 30) * 24 * 60 * 60 * 1000).toISOString()
+      const page = await api.records(after, since)
       if (!mounted.current) return
       setItems((previous) => after ? [...previous, ...page.items] : page.items)
       setCursor(page.nextCursor ?? null)
@@ -46,14 +84,37 @@ export function HistoryScreen({ onHome, onRecord }: { onHome: () => void; onReco
       <ErrorNote>{error}</ErrorNote>
       <Action onClick={() => { void load() }}>重新加载</Action>
     </StatusPanel>
+    if (period !== 'all') return <>
+      <HistoryPeriodFilter period={period} periods={periods} onChange={(next) => {
+        setPeriod(next)
+        setItems([])
+        setCursor(null)
+        void load(undefined, next)
+      }} />
+      <StatusPanel title='这段时间还没有记录'>
+        <Action secondary onClick={() => {
+          setPeriod('all')
+          setItems([])
+          setCursor(null)
+          void load(undefined, 'all')
+        }}>查看全部记录</Action>
+      </StatusPanel>
+    </>
     return <StatusPanel title='还没有学习记录'>
-      <Text className='body-copy'>答完一组练习后，就能在这里回顾成绩和讲解。</Text>
-      <Action onClick={onHome}>选个主题开始</Action>
+      <View className='empty-actions empty-actions-split'>
+        <Action secondary onClick={onQuestionBank}>去题库</Action>
+        <Action onClick={onHome}>去学习</Action>
+      </View>
     </StatusPanel>
   }
 
   return <>
-    <View className='history-head'><Text className='h1'>你学过的主题</Text></View>
+    <HistoryPeriodFilter period={period} periods={periods} onChange={(next) => {
+      setPeriod(next)
+      setItems([])
+      setCursor(null)
+      void load(undefined, next)
+    }} />
     <View className='comic-row-list history-list'>
       {items.map((item, index) => <ComicRow key={item.recordId} mint={index === 0}
         secondary={`${formatCompletionDate(item.completedAt)} · 答对 ${item.correctCount} / ${item.totalQuestions}`}
@@ -68,6 +129,23 @@ export function HistoryScreen({ onHome, onRecord }: { onHome: () => void; onReco
       </Action>
     </View>}
   </>
+}
+
+function HistoryPeriodFilter({ period, periods, onChange }: {
+  period: 'all' | '7d' | '30d'
+  periods: { id: 'all' | '7d' | '30d'; label: string }[]
+  onChange: (period: 'all' | '7d' | '30d') => void
+}) {
+  return <View className='history-filter' aria-label='按时间筛选学习记录'>
+    <View className='history-filter-options'>
+      {periods.map((option) => <Button key={option.id}
+        className={`ui-button history-filter-option${period === option.id ? ' selected' : ''}`}
+        hoverClass='row-press' aria-pressed={period === option.id}
+        onClick={() => onChange(option.id)}>
+        <Text>{option.label}</Text>
+      </Button>)}
+    </View>
+  </View>
 }
 
 export type RecordMode = 'result' | 'record' | 'mistakes' | 'review'
@@ -199,34 +277,11 @@ export function RecordScreen({ recordId, mode, questionId, visible, cache,
 
   const wrongCount = record.totalQuestions - record.correctCount
   return <>
-    {mode === 'result' ? <View className='result-banner'>
-      <View className='result-art' aria-hidden />
-      <Text className='result-heading'>这一回，答完啦！</Text>
-      <Text className='result-line'>{record.topicTitle} · 完成 {record.totalQuestions} 题</Text>
-      <Text className='result-score tape paper' aria-label={`答对 ${record.correctCount} 道题，共 ${record.totalQuestions} 道题`}>
-        {record.correctCount} / {record.totalQuestions}
-      </Text>
-      <Text className='result-line'>本次答对 · 已保存学习记录</Text>
-      <Image className='result-student' src={happy} mode='widthFix' aria-hidden />
-    </View> : <View className='detail-head'>
-      <Text className='h1'>{record.topicTitle}</Text>
-      <Text className='detail-line'>完成时间 · {formatCompletionDate(record.completedAt)}</Text>
-      <Text className='detail-line'>完成 {record.totalQuestions} 题 · 答对 {record.correctCount} 题</Text>
-    </View>}
-    <View className='result-section'>
-      <Text className='h2'>这轮学到了什么</Text>
-      <View className='summary-list'>
-        {record.takeaways.map((point, index) => {
-          const evidence = (record.takeawayEvidence ?? []).filter((source) => point.evidenceIds.includes(source.evidenceId))
-          return <View className='summary-item takeaway' key={index}>
-            <Text className='bullet' aria-hidden>•</Text>
-            <View className='summary-item-copy'>
-              <Text>{point.text}</Text>
-              <EvidenceLink evidence={evidence} onEvidence={onEvidence} />
-            </View>
-          </View>
-        })}
-      </View>
+    <ResultBanner record={record} historical={mode === 'record'} />
+    <View className='result-stats-card'>
+      <View className='result-stat'><Text className='result-stat-label'>正确率</Text><Text className='result-stat-value'>{record.totalQuestions ? Math.round(record.correctCount / record.totalQuestions * 100) : 0}%</Text></View>
+      <View className='result-stat'><Text className='result-stat-label'>本轮金币</Text><Text className='result-stat-value'>{record.coinDelta == null ? '—' : record.coinDelta > 0 ? `+${record.coinDelta}` : record.coinDelta}</Text></View>
+      <View className='result-stat'><Text className='result-stat-label'>金币余额</Text><Text className='result-stat-value'>{record.coinBalance ?? '—'}</Text></View>
     </View>
     {wrongCount > 0 ? <ComicRow onClick={onMistakes}>错题回顾 · {wrongCount} 题</ComicRow>
       : <Text className='review-record-empty'>这次全部答对，没有错题。</Text>}
@@ -262,9 +317,8 @@ function Summary({ record, wrongCount, onReview, onEvidence, retrying, loadError
   return <View className='result-summary' aria-live='polite'>
     <View className='summary-heading'>
       <Text className='h2'>AI 学习总结</Text>
-      {ready && <Tape tone='paper'>AI 生成</Tape>}
     </View>
-    {pendingSummary(aiSummary) && <Text className='summary-copy'>正在整理这次练习的重点和错题。你可以先回顾基础结果。</Text>}
+    {pendingSummary(aiSummary) && <View className='summary-loading'><View className='summary-loading-dot' /><Text>正在整理学习总结</Text></View>}
     {aiSummary.status === 'FAILED' && <>
       <Text className='summary-copy'>{aiSummary.error?.retryable
         ? '这次总结暂时没生成。可以重试，基础结果已保留。'

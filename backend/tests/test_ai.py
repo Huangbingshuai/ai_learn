@@ -7,8 +7,8 @@ import pytest
 
 from app.config import Settings
 from app.domain.quizzes import validate_quiz
-from app.domain.topics import get_topic_version, load_fixed_quiz
 from app.worker.queue import _validation_issues
+from tests.topic_fixtures import get_topic_version, load_fixed_quiz
 
 
 @pytest.fixture
@@ -238,7 +238,7 @@ def test_quiz_methods_send_one_evidence_bound_json_request(provider, topic, capl
     assert request["max_tokens"] >= 6000
     assert "max_completion_tokens" not in request
     assert "tools" not in request
-    assert "20" in request["messages"][0]["content"]
+    assert "12" in request["messages"][0]["content"]
     data = json.loads(request["messages"][1]["content"])
     assert data["topic"]["evidence"] == [{"evidenceId": "e1", "text": "月球反射太阳光。"}]
     if task == "repair":
@@ -446,12 +446,27 @@ def test_summary_sends_only_the_learning_snapshot_and_accepts_citations(provider
     prompt = requests[0]["messages"][1]["content"]
     assert "private-" not in prompt
     snapshot = json.loads(prompt)
-    assert set(snapshot) == {"topicTitle", "takeaways", "takeawayEvidence", "answers"}
+    assert set(snapshot) == {"topicTitle", "takeaways", "takeawayEvidence", "answers", "allowedCitations"}
+    assert snapshot["allowedCitations"]["wrongQuestionIds"] == ["q01"]
+    assert snapshot["allowedCitations"]["questionEvidence"]["q01"] == ["e1"]
     assert snapshot["takeawayEvidence"] == [{"evidenceId": "e2", "text": "月光来自反射。"}]
     assert snapshot["answers"][0]["question"]["options"][0] == {"optionId": "A", "text": "正确"}
     assert snapshot["answers"][0]["selectedOptionIds"] == ["B"]
     assert snapshot["answers"][0]["isCorrect"] is False
     assert snapshot["answers"][0]["evidence"] == [{"evidenceId": "e1", "text": "月球反射太阳光。"}]
+
+
+def test_summary_retry_includes_safe_validation_feedback(provider, record):
+    result = {
+        "knowledgeReview": [{"text": "月光来自反射。", "questionIds": ["q01"], "evidenceIds": []}],
+        "mistakeNotes": [{"text": "复习月光。", "questionIds": ["q01"], "evidenceIds": []}],
+        "reviewSuggestions": [{"text": "解释月光。", "questionIds": ["q01"], "evidenceIds": []}],
+    }
+    record["validationFeedback"] = "A mistake note must only reference actual mistakes"
+    adapter, requests = provider(content=json.dumps(result))
+    adapter.summarize(record)
+    snapshot = json.loads(requests[0]["messages"][1]["content"])
+    assert snapshot["validationFeedback"] == record["validationFeedback"]
 
 
 def test_summary_rejects_wrong_field_types(ai_module, provider, record):
@@ -471,3 +486,19 @@ def test_summary_rejects_wrong_field_types(ai_module, provider, record):
 
     assert raised.value.code == "PROVIDER_INVALID_OUTPUT"
     assert len(requests) == 1
+
+
+def test_summary_normalizes_single_citation_ids(provider, record):
+    result = {
+        "knowledgeReview": [{"text": "月光来自反射。", "evidenceId": "e1"}],
+        "mistakeNotes": [{"text": "复习月光来源。", "questionId": "q01"}],
+        "reviewSuggestions": [{"text": "解释月光。", "questionId": "q01", "evidenceId": "e1"}],
+    }
+    adapter, _ = provider(content=json.dumps(result))
+
+    normalized = adapter.summarize(record)
+
+    assert normalized["knowledgeReview"][0]["evidenceIds"] == ["e1"]
+    assert normalized["mistakeNotes"][0]["questionIds"] == ["q01"]
+    assert normalized["mistakeNotes"][0]["evidenceIds"] == []
+    assert normalized["reviewSuggestions"][0]["questionIds"] == ["q01"]

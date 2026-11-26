@@ -1,13 +1,14 @@
 import json
 from copy import deepcopy
+from datetime import timedelta
 
 import httpx
 from sqlalchemy import func, select
 
-from app.db import GenerationJob, SavedTopic
-from app.domain.topics import get_topic_version, load_fixed_quiz
+from app.db import GenerationJob, Quiz, SavedTopic, utcnow
 from app.worker.queue import Worker
 from app.worker.search import SEARCH_URL, TavilySearch
+from tests.topic_fixtures import get_topic_version, load_fixed_quiz
 
 
 def test_search_accepts_only_passages_present_in_raw_content():
@@ -87,7 +88,7 @@ def test_live_job_tracks_actual_phases_and_publishes_only_verified_set(
             return deepcopy(load_fixed_quiz())
 
         def review(self, topic, quiz):
-            assert len(quiz["questions"]) == 20
+            assert len(quiz["questions"]) == 12
             phase()
             return {"accepted": True, "issues": []}
 
@@ -108,8 +109,16 @@ def test_live_job_tracks_actual_phases_and_publishes_only_verified_set(
         assert job.checkpoint is None and job.topic_input is None
 
     topic = client.get("/v1/topics", headers=headers).json()["items"][0]
-    assert topic["title"] == "地轴倾斜" and topic["art"] == "topic"
+    assert topic["title"] == "地轴倾斜" and topic["art"] == "topic" and topic["canDelete"]
+    assert topic["originalInput"] == "入门了解地轴倾斜"
+    with database.begin() as db:
+        db.get(Quiz, result["quizId"]).expires_at = utcnow() - timedelta(days=2)
+    Worker(settings, database, Model()).cleanup()
+    opened = client.post(f"/v1/topics/{topic['topicKey']}/quiz", headers=headers)
+    assert opened.status_code == 200
+    assert opened.json()["quizId"] == result["quizId"]
     other = login("second-device-unique")
+    assert client.post(f"/v1/topics/{topic['topicKey']}/quiz", headers=other).status_code == 404
     assert topic not in client.get("/v1/topics", headers=other).json()["items"]
     assert (
         client.post(
@@ -162,3 +171,47 @@ def test_insufficient_sources_does_not_create_saved_topic(client, login, databas
     assert result["error"]["code"] == "SOURCE_INSUFFICIENT"
     with database() as db:
         assert db.scalar(select(func.count()).select_from(SavedTopic)) == 0
+
+
+def test_two_distinct_sources_can_reach_quiz_review(client, login, database, settings):
+    headers = login()
+    job = client.post(
+        "/v1/generation-jobs",
+        json={"topic": "水浒传的武松是谁"},
+        headers={**headers, "Idempotency-Key": "two-sources"},
+    ).json()
+    evidence = get_topic_version("seasons", "v1")["evidence"][:2]
+    evidence[1]["sourceUrl"] = "https://example.org/second-source"
+
+    class Search:
+        def passages(self, _queries):
+            return evidence
+
+    class Model:
+        def resolve_topic(self, _topic):
+            return {
+                "title": "武松",
+                "scope": "人物经历",
+                "queries": ["武松"],
+                "needsClarification": False,
+            }
+
+        def select_sources(self, _intent, _passages):
+            return {"evidenceIds": [entry["evidenceId"] for entry in evidence]}
+
+        def generate(self, _topic):
+            candidate = deepcopy(load_fixed_quiz())
+            for item in [*candidate["questions"], *candidate["takeaways"]]:
+                item["evidenceIds"] = [evidence[0]["evidenceId"]]
+            return candidate
+
+        def review(self, _topic, quiz):
+            return {
+                "accepted": True,
+                "issues": [],
+                "checkedQuestionIds": [q["questionId"] for q in quiz["questions"]],
+            }
+
+    assert Worker(settings, database, Model(), Search()).process_once()
+    response = client.get(f"/v1/generation-jobs/{job['jobId']}", headers=headers).json()
+    assert response["status"] == "SUCCEEDED", response

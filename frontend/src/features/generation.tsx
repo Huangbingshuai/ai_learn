@@ -1,15 +1,14 @@
 import { Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
-import { api, type PendingGeneration, type RestartGroup } from '../api/client'
+import { api, type PendingGeneration } from '../api/client'
 import { attemptNeedsRegeneration, messageForError, RequestError } from '../api/request'
 import type { Attempt, GenerationJob, QuizGroup } from '../api/types'
 import { Action, Tape } from '../components/comic'
-import { FIRST_POLL_DELAY, formatElapsed, generationPhases, nextPollDelay } from './flow'
+import { FIRST_POLL_DELAY, formatElapsed, generationPhases, generationProgressPercent, nextPollDelay } from './flow'
 
 export type GenerationIntent =
   | PendingGeneration
-  | { kind: 'fixed'; key: string }
-  | { kind: 'restart'; group: RestartGroup; key: string }
+  | { kind: 'saved'; topicKey: string; title: string; key: string }
 
 type Failure = {
   title: string
@@ -25,7 +24,7 @@ function jobFailure(job: GenerationJob): Failure {
     return { title: '这组练习已到期', description: issue.message, retry, requestId: issue.requestId }
   }
   if (issue?.code === 'SOURCE_INSUFFICIENT') {
-    return { title: '这个主题的依据不足', description: '找到的资料还支撑不了 20 道有依据的题。可以缩小范围或换个主题。', retry, requestId: issue.requestId }
+    return { title: '这个主题的依据不足', description: '找到的资料还支撑不了 12 道有依据的题。可以缩小范围或换个主题。', retry, requestId: issue.requestId }
   }
   if (issue?.code === 'TOPIC_NEEDS_CLARIFICATION') {
     return { title: '想了解哪一部分？', description: issue.message, retry, requestId: issue.requestId }
@@ -44,15 +43,16 @@ function jobFailure(job: GenerationJob): Failure {
   }
 }
 
-export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidTopic, onStartAgain, onJobId, onFailed }: {
+export function GenerationScreen({ intent, visible, inline = false, onCancel, onOpen, onInvalidTopic, onStartAgain, onJobId, onFailed }: {
   intent: GenerationIntent
   visible: boolean
+  inline?: boolean
   onCancel: (finished: boolean) => void
   onOpen: (attempt: Attempt) => void
   onInvalidTopic: (message: string) => void
   onStartAgain: () => void
   onJobId: (id: string) => void
-  onFailed: () => void
+  onFailed: (message?: string) => void
 }) {
   const [failure, setFailure] = useState<Failure>()
   const [status, setStatus] = useState<GenerationJob>()
@@ -61,6 +61,12 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
   const [retryTrigger, setRetryTrigger] = useState(0)
   const job = useRef<GenerationJob>()
   const jobId = useRef(intent.kind === 'generate' ? intent.jobId : undefined)
+  const phaseProgress = useRef<{ phase: GenerationJob['phase']; startedAt: number }>({
+    phase: undefined, startedAt: Date.now(),
+  })
+  const intentIdentity = intent.kind === 'generate'
+    ? `${intent.key}:${JSON.stringify(intent.input)}:${intent.jobId ?? ''}`
+    : `${intent.key}:${intent.topicKey}`
   const group = useRef<QuizGroup>()
   const attemptKey = `${intent.key}-attempt`
   const callbacks = useRef({ onOpen, onInvalidTopic, onJobId, onFailed })
@@ -80,13 +86,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
     async function run(delay: number) {
       try {
         if (!group.current) {
-          if (intent.kind === 'restart') group.current = intent.group
-          else if (intent.kind === 'fixed') {
-            if (!api.fixedQuiz) throw new RequestError('CONFIGURATION', '开发固定题组未开启。', 0)
-            const fixed = await api.fixedQuiz(intent.key)
-            if (!active) return
-            group.current = fixed
-          }
+          if (intent.kind === 'saved') group.current = await api.savedQuiz(intent.topicKey)
           else {
             let result = job.current
             if (!result || result.status === 'QUEUED' || result.status === 'RUNNING') {
@@ -103,8 +103,9 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
             setStatus(result)
             setConnecting(false)
             if (result.status === 'FAILED') {
-              callbacks.current.onFailed()
-              setFailure(jobFailure(result))
+              const failed = jobFailure(result)
+              callbacks.current.onFailed(failed.description)
+              setFailure(failed)
               return
             }
             if (result.status !== 'SUCCEEDED') {
@@ -124,6 +125,19 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
       } catch (problem) {
         if (!active) return
         const requestError = problem instanceof RequestError ? problem : undefined
+        if (!group.current && !jobId.current && requestError?.status === 409) {
+          const current = await api.currentJob().catch(() => null)
+          if (!active) return
+          if (current) {
+            jobId.current = current.jobId
+            job.current = current
+            callbacks.current.onJobId(current.jobId)
+            setStatus(current)
+            setConnecting(false)
+            timer = setTimeout(() => { void run(FIRST_POLL_DELAY) }, 0)
+            return
+          }
+        }
         if (!group.current && jobId.current && requestError?.retryable) {
           setConnecting(true)
           timer = setTimeout(() => { void run(nextPollDelay(delay)) }, delay)
@@ -137,7 +151,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
         const insufficient = requestError?.code === 'SOURCE_INSUFFICIENT'
         if (unavailable || insufficient || requestError?.code === 'MISSING_QUIZ'
           || requestError?.status === 404 || (requestError && !requestError.retryable)) {
-          callbacks.current.onFailed()
+          callbacks.current.onFailed(messageForError(problem))
         }
         setFailure({
           title: unavailable ? '这组练习已不可用' : insufficient ? '这个主题的依据不足' : '题目暂时没准备好',
@@ -154,15 +168,46 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
       active = false
       clearTimeout(timer)
     }
-  }, [attemptKey, failure, intent, retryTrigger, visible])
+  }, [attemptKey, failure, intentIdentity, retryTrigger, visible])
 
   const live = intent.kind === 'generate'
-  const title = live ? status?.topicTitle || intent.title : intent.kind === 'restart' ? intent.group.topicTitle : '固定题组'
+  const title = live ? status?.topicTitle || intent.title : intent.title
   const createdAt = status?.createdAt ? Date.parse(status.createdAt) : NaN
   const startedAt = Number.isFinite(createdAt) ? createdAt : live ? intent.requestedAt : now
   const phase = status?.status === 'SUCCEEDED' ? '正在打开练习'
     : status?.phase ? generationPhases[status.phase]
-      : status ? '等待开始' : jobId.current ? '读取出题进度' : '正在提交主题'
+      : status?.status === 'QUEUED' ? '排队中'
+        : status ? '准备开始处理' : jobId.current ? '读取出题进度' : '正在提交主题'
+  if (phaseProgress.current.phase !== status?.phase) {
+    phaseProgress.current = { phase: status?.phase, startedAt: now }
+  }
+  const elapsedMs = Math.max(0, now - phaseProgress.current.startedAt)
+  const percent = status?.status === 'SUCCEEDED' ? 100
+    : generationProgressPercent(status?.phase, elapsedMs)
+
+  if (inline) {
+    if (status?.status === 'SUCCEEDED') return null
+    if (failure) return <View className='generation-inline-error'>
+      <Text className='field-error'>{failure.title}</Text>
+      <Action onClick={failure.retry === 'new' ? onStartAgain : () => {
+        setFailure(undefined)
+        setRetryTrigger((version) => version + 1)
+      }}>{failure.retry === 'new' ? '重新生成' : '重试'}</Action>
+    </View>
+    return <View className='generation-inline' aria-label='题目生成进度'>
+      <View className='generation-inline-meta'>
+        <Text className='generation-inline-phase'>{connecting ? '重新连接中' : phase}</Text>
+        <View className='generation-inline-reading'>
+          <Text className='generation-inline-time'>已用 {formatElapsed(startedAt, now)}</Text>
+          <Text className='generation-inline-percent'>{percent}%</Text>
+        </View>
+      </View>
+      <View className='generation-progress-track' aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <View className='generation-progress-fill' style={{ width: `${percent}%` }} />
+      </View>
+    </View>
+  }
+
   return <View className='stage'>
     <Tape>{title}</Tape>
     <View className={`manifest${failure ? ' is-error' : ''}`}>
@@ -170,7 +215,7 @@ export function GenerationScreen({ intent, visible, onCancel, onOpen, onInvalidT
       <View className='manifest-title'>
         {failure ? <Text>{failure.title}</Text> : <>
           <Text>{live ? '正在准备' : '正在打开'}</Text>
-          <Text className='manifest-emphasis'>{live ? '你的 20 道题' : '这组练习'}</Text>
+          <Text className='manifest-emphasis'>{live ? '你的 12 道题' : '这组练习'}</Text>
         </>}
       </View>
       <View className='spot' aria-hidden />

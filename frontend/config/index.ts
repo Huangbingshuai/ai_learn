@@ -1,8 +1,11 @@
 import { defineConfig, type UserConfigExport } from '@tarojs/cli'
+import { dotenvParse } from '@tarojs/helper'
 
 export default defineConfig<'webpack5'>(() => {
   const development = process.env.NODE_ENV === 'development'
+  const localEnv = dotenvParse(process.cwd(), ['QINGZHI_', 'TARO_APP_'], process.env.NODE_ENV)
   const apiBaseUrl = (process.env.QINGZHI_API_BASE_URL || process.env.TARO_APP_API_BASE_URL
+    || localEnv.QINGZHI_API_BASE_URL || localEnv.TARO_APP_API_BASE_URL
     || (development ? 'http://127.0.0.1:8000' : '')).trim().replace(/\/+$/, '')
   if (apiBaseUrl) {
     const url = new URL(apiBaseUrl)
@@ -14,7 +17,6 @@ export default defineConfig<'webpack5'>(() => {
     throw new Error('QINGZHI_API_BASE_URL is required for a production build.')
   }
   const devAuth = development && (process.env.QINGZHI_DEV_AUTH || process.env.TARO_APP_DEV_AUTH) === '1'
-  const devFixedQuiz = devAuth && (process.env.QINGZHI_DEV_FIXED_QUIZ || process.env.TARO_APP_DEV_FIXED_QUIZ) === '1'
 
   return {
     projectName: 'qingzhi-weapp',
@@ -26,13 +28,19 @@ export default defineConfig<'webpack5'>(() => {
     defineConstants: {
       __QINGZHI_API_BASE_URL__: JSON.stringify(apiBaseUrl),
       __QINGZHI_DEV_AUTH__: JSON.stringify(devAuth),
-      __QINGZHI_DEV_FIXED_QUIZ__: JSON.stringify(devFixedQuiz),
     },
     framework: 'react',
     compiler: 'webpack5',
     cache: { enable: false },
     logger: { quiet: false, stats: false },
     mini: {
+      webpackChain(chain) {
+        chain.plugin('providerPlugin').tap((args) => {
+          delete args[0].requestAnimationFrame
+          delete args[0].cancelAnimationFrame
+          return args
+        })
+      },
       imageUrlLoaderOption: { limit: true },
       postcss: {
         pxtransform: { enable: true, config: {} },

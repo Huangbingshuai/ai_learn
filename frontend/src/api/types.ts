@@ -13,6 +13,8 @@ export type BodyFor<P extends keyof paths, M extends keyof paths[P]> = paths[P][
 } ? Body : never
 
 export type Session = For<'/v1/auth/wechat', 'post'>
+export type UserProfile = For<'/v1/me', 'get'>
+export type ProfileStats = For<'/v1/me/stats', 'get'>
 
 export type TopicList = For<'/v1/topics', 'get'>
 export type Topic = TopicList['items'][number]
@@ -27,3 +29,17 @@ export type RecordItem = RecordPage['items'][number]
 export type LearningRecord = For<'/v1/records/{record_id}', 'get'>
 export type AiSummary = LearningRecord['aiSummary']
 export type SummaryEntry = NonNullable<AiSummary['content']>['knowledgeReview'][number]
+export type MistakeStatus = 'to_review' | 'mastered'
+export type MistakeApiItem = For<'/v1/mistakes/{fingerprint}', 'get'>
+export type MistakeQuestion = Omit<Question, 'index' | 'aiGenerated'> & {
+  correctOptionIds: string[]
+  explanation: string
+  evidenceIds: string[]
+  aiGenerated?: boolean
+}
+export type Mistake = Omit<MistakeApiItem, 'question' | 'latestReceipt'> & {
+  question: MistakeQuestion
+  latestReceipt: AnswerReceipt
+}
+export type MistakePage = Omit<For<'/v1/mistakes', 'get'>, 'items'> & { items: Mistake[] }
+export type MistakeTopic = MistakePage['topics'][number]

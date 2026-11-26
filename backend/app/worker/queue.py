@@ -25,13 +25,10 @@ from app.db import (
     new_id,
     utcnow,
 )
-from app.domain.quizzes import validate_quiz
+from app.domain.quizzes import TOTAL_QUESTIONS, validate_quiz
 from app.domain.summaries import validate_summary
 from app.domain.topics import (
-    CURRENT_VERSIONS,
-    get_topic_version,
     live_topic_key,
-    match_topic,
     normalize,
 )
 from app.quota import QuotaReached, reserve_summary_quota
@@ -254,7 +251,7 @@ class Worker:
         with self.sessions.begin() as session:
             row = self._owned(session, claim)
             assert isinstance(row, GenerationJob)
-            topic_key, topic_version = row.topic_key, row.topic_version
+            topic_key = row.topic_key
             checkpoint = row.checkpoint or {}
             topic_input = row.topic_input
             repair_started = row.repaired
@@ -263,13 +260,7 @@ class Worker:
         elif topic_input:
             topic = self._live_topic(claim, topic_input, checkpoint, topic_key)
         else:
-            try:
-                self._set_reading_sources(claim)
-                topic = get_topic_version(topic_key, topic_version)
-            except ValueError:
-                raise AIError(
-                    "SOURCE_INSUFFICIENT", "当前主题的资料无法支持出题。", False
-                ) from None
+            raise AIError("SOURCE_INSUFFICIENT", "当前主题的资料无法支持出题。", False)
 
         if "candidate" not in checkpoint:
             raw = self._model_call(claim, self.ai.generate, topic, slots_needed=2)
@@ -321,7 +312,7 @@ class Worker:
             )
             row.topic_key = topic["topicKey"]
             row.topic_version = topic["version"]
-            if "scope" in topic and topic["topicKey"] not in CURRENT_VERSIONS:
+            if "scope" in topic:
                 self._save_topic(session, row.user_id, topic, now)
             _succeed(row)
 
@@ -331,6 +322,7 @@ class Worker:
             user_id=user_id,
             topic_key=topic["topicKey"],
             title=topic["title"],
+            original_input=topic.get("originalInput"),
             scope=topic["scope"],
             evidence=topic["evidence"],
             evidence_at=evidence_at,
@@ -341,6 +333,7 @@ class Worker:
                 index_elements=[SavedTopic.user_id, SavedTopic.topic_key],
                 set_={
                     "title": statement.excluded.title,
+                    "original_input": statement.excluded.original_input,
                     "scope": statement.excluded.scope,
                     "evidence": statement.excluded.evidence,
                     "evidence_at": statement.excluded.evidence_at,
@@ -391,7 +384,7 @@ class Worker:
 
         insufficient = AIError(
             "SOURCE_INSUFFICIENT",
-            "找到的可信资料不足以生成 20 道题。请缩小主题范围或换个主题。",
+            f"找到的可信资料不足以生成 {TOTAL_QUESTIONS} 道题。请缩小范围或换个主题。",
             False,
         )
         if len(passages) < MIN_PASSAGES:
@@ -411,14 +404,11 @@ class Worker:
         evidence = [item for item in passages if item["evidenceId"] in selected]
         if len(evidence) < MIN_PASSAGES or len({item["sourceUrl"] for item in evidence}) < 2:
             raise insufficient
-        try:
-            example = match_topic(intent["title"]) if not saved_key else None
-        except ValueError:
-            example = None
         topic = {
             "topicKey": saved_key
-            or (example.topicKey if example else live_topic_key(intent["title"])),
+            or live_topic_key(intent["title"]),
             "title": intent["title"],
+            "originalInput": topic_input,
             "scope": intent["scope"],
             "version": "web-v1",
             "evidence": evidence,
@@ -457,7 +447,10 @@ class Worker:
         self, claim: _Claim, topic: dict, raw: dict
     ) -> tuple[dict | None, list[str]]:
         try:
-            quiz = validate_quiz(raw, topic).model_dump(mode="json", by_alias=True)
+            validated = validate_quiz(raw, topic)
+            if len(validated.questions) != TOTAL_QUESTIONS:
+                raise ValueError(f"A new quiz must contain {TOTAL_QUESTIONS} questions")
+            quiz = validated.model_dump(mode="json", by_alias=True)
         except ValueError as error:
             return None, _validation_issues(error, raw)
         verdict = self._model_call(claim, self.ai.review, topic, quiz, phase="VERIFYING")
@@ -467,7 +460,7 @@ class Worker:
 
     def _summarize(self, claim: _Claim) -> None:
         with self.sessions.begin() as session:
-            self._owned(session, claim)
+            summary_row = self._owned(session, claim)
             record = session.get(Record, claim.row_id)
             if record is None:
                 raise _LeaseLost()
@@ -477,11 +470,21 @@ class Worker:
                 "takeawayEvidence": record.takeaway_evidence,
                 "answers": record.answers,
             }
+            if summary_row.error_code == "SUMMARY_QUALITY_FAILED" and summary_row.error_message:
+                snapshot["validationFeedback"] = summary_row.error_message
         raw = self._model_call(claim, self.ai.summarize, snapshot)
         try:
             summary = validate_summary(raw, snapshot).model_dump(mode="json", by_alias=True)
-        except ValueError:
-            raise AIError("SUMMARY_QUALITY_FAILED", "学习总结未通过校验。", True) from None
+        except ValueError as error:
+            logger.warning("Summary validation failed task=%s error_type=%s", claim.row_id, type(error).__name__)
+            reasons = {
+                "Mistake notes must reflect the actual score",
+                "Invalid learning record citation",
+                "A mistake note must only reference actual mistakes",
+                "Mistake evidence must correspond to the cited wrong answers",
+            }
+            reason = str(error) if str(error) in reasons else "学习总结的引用或格式不符合要求。"
+            raise AIError("SUMMARY_QUALITY_FAILED", reason, True) from None
         with self.sessions.begin() as session:
             row = self._owned(session, claim, lock=True)
             assert isinstance(row, RecordSummary)
@@ -545,7 +548,14 @@ class Worker:
                 )
                 .values(status="ABANDONED")
             )
-            session.execute(delete(Quiz).where(Quiz.expires_at <= now - timedelta(hours=24)))
+            session.execute(
+                delete(Quiz).where(
+                    Quiz.expires_at <= now - timedelta(hours=24),
+                    ~exists().where(
+                        SavedTopic.user_id == Quiz.user_id, SavedTopic.topic_key == Quiz.topic_key
+                    ),
+                )
+            )
             session.execute(
                 delete(GenerationJob).where(
                     GenerationJob.status.in_(("SUCCEEDED", "FAILED")),

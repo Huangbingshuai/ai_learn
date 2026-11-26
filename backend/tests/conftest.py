@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,12 @@ from app.config import Settings
 from app.main import create_app
 
 BACKEND = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def fixed_data():
+    source = BACKEND / "tests" / "fixtures" / "topics" / "fixed-seasons.json"
+    return json.loads(source.read_text())
 
 
 @pytest.fixture
@@ -42,7 +49,7 @@ def database():
 
 @pytest.fixture
 def settings():
-    return Settings(app_env="development", wechat_app_id="test-wechat")
+    return Settings(_env_file=None, app_env="development", wechat_app_id="test-wechat")
 
 
 def stub_exchange(_settings, code):

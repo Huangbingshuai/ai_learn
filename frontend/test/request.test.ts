@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { attemptNeedsRegeneration, createRequestClient, RequestError, type RequestOptions, type Session } from '../src/api/request'
 
 test('shares one login after concurrent unauthorized requests and preserves the write idempotency key', async () => {
-  let session: Session | undefined = { accessToken: 'old', expiresAt: '2099-01-01T00:00:00Z' }
+  let session: Session | undefined = { accessToken: 'old', expiresAt: '2099-01-01T00:00:00Z', userId: 'user-one' }
   let logins = 0
   const writes: RequestOptions[] = []
   const request = createRequestClient({
@@ -17,7 +17,7 @@ test('shares one login after concurrent unauthorized requests and preserves the 
     saveSession: (next) => { session = next },
     login: async () => {
       logins += 1
-      return { accessToken: 'new', expiresAt: '2099-01-01T00:00:00Z' }
+      return { accessToken: 'new', expiresAt: '2099-01-01T00:00:00Z', userId: 'user-one' }
     },
   })
   const original = { path: '/v1/attempts', method: 'POST' as const, data: { quizId: 'id' }, idempotencyKey: 'first' }
@@ -34,7 +34,7 @@ test('returns the service error body without replaying a rate-limited request', 
       calls += 1
       return { statusCode: 429, data: { code: 'RATE_LIMITED', message: '稍后再试。', requestId: 'req-1', retryable: true } }
     },
-    readSession: () => ({ accessToken: 'one', expiresAt: '2099-01-01T00:00:00Z' }),
+    readSession: () => ({ accessToken: 'one', expiresAt: '2099-01-01T00:00:00Z', userId: 'user-one' }),
     saveSession() {},
     login: async () => { throw new Error('unexpected login') },
   })

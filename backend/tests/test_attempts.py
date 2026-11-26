@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-DATA = Path(__file__).resolve().parents[1] / "data" / "topics"
+DATA = Path(__file__).resolve().parent / "fixtures" / "topics"
 
 
 @pytest.fixture
@@ -15,15 +15,34 @@ def fixed_data():
 
 
 @pytest.fixture
-def play(client, login):
+def play(client, login, database, settings):
+    from app.db import GenerationJob, Quiz, new_id, utcnow
+    from app.domain.quizzes import RULES_VERSION, validate_quiz
+    from tests.topic_fixtures import get_topic_version, load_fixed_quiz
+
     headers = login()
 
     def with_key(key):
         return {**headers, "Idempotency-Key": key}
 
-    fixed = client.post("/v1/dev/quizzes/fixed", headers=with_key("fixed"))
-    assert fixed.status_code == 201, fixed.text
-    quiz_id = fixed.json()["quizId"]
+    now = utcnow()
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    topic = get_topic_version("seasons", "v1")
+    with database.begin() as db:
+        job_id = new_id()
+        db.add(GenerationJob(
+            id=job_id, user_id=user_id, source="TOPIC", topic_key="seasons", topic_version="v1",
+            input_digest="a" * 64, idempotency_key="fixture-job", status="SUCCEEDED",
+            next_run_at=now, created_at=now, expires_at=now + timedelta(hours=1),
+            model_name="test-fixture", rules_version=RULES_VERSION,
+        ))
+        db.add(Quiz(
+            id=new_id(), job_id=job_id, user_id=user_id, topic_key="seasons", topic_title="测试题组",
+            content=validate_quiz(load_fixed_quiz(), topic).model_dump(mode="json"),
+            evidence=topic["evidence"], ai_generated=False, created_at=now,
+            expires_at=now + timedelta(hours=settings.quiz_hours), rules_version=RULES_VERSION,
+        ))
+        quiz_id = db.scalar(select(Quiz.id).where(Quiz.job_id == job_id))
     attempt = client.post("/v1/attempts", json={"quizId": quiz_id}, headers=with_key("start"))
     assert attempt.status_code == 201, attempt.text
     return headers, quiz_id, attempt.json()
@@ -32,7 +51,7 @@ def play(client, login):
 def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
     headers, quiz_id, attempt = play
     assert attempt["answeredCount"] == 0
-    assert attempt["totalQuestions"] == 20
+    assert attempt["totalQuestions"] == 12
     assert attempt["status"] == "ACTIVE"
     assert set(attempt["question"]) == {
         "questionId",
@@ -48,8 +67,6 @@ def test_attempt_projects_one_question_and_is_idempotent(client, play, login):
         "/v1/attempts", json={"quizId": quiz_id}, headers={**headers, "Idempotency-Key": "start"}
     )
     assert start.json()["attemptId"] == attempt["attemptId"]
-    same = client.post("/v1/dev/quizzes/fixed", headers={**headers, "Idempotency-Key": "fixed"})
-    assert same.json()["quizId"] == quiz_id
     other = login("device-999999")
     assert client.get(f"/v1/attempts/{attempt['attemptId']}", headers=other).status_code == 404
     assert (
@@ -96,6 +113,60 @@ def choose(client, headers, attempt_id, question_id, ids):
     )
 
 
+def test_unsubmitted_selection_is_saved_to_account_and_restored(client, play):
+    headers, _, attempt = play
+    question = attempt["question"]
+    selected = [question["options"][0]["optionId"]]
+    saved = client.put(
+        f"/v1/attempts/{attempt['attemptId']}/draft",
+        json={"selectedOptionIds": selected},
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    restored = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
+    assert restored["draftOptionIds"] == selected
+
+    answer = choose(client, headers, attempt["attemptId"], question["questionId"], selected)
+    assert answer.status_code == 200
+    next_question = client.get(f"/v1/attempts/{attempt['attemptId']}", headers=headers).json()
+    assert next_question["draftOptionIds"] == []
+
+
+def test_active_attempts_and_previous_answers_are_account_scoped(client, play, login, fixed_data, database):
+    from app.db import SavedTopic, utcnow
+
+    headers, _, attempt = play
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    now = utcnow()
+    with database.begin() as db:
+        db.add(SavedTopic(
+            user_id=user_id, topic_key="seasons", title="测试题组", original_input="测试题组",
+            scope="仅供测试", evidence=[], evidence_at=now, updated_at=now,
+        ))
+    question = fixed_data["questions"][0]
+    submitted = choose(client, headers, attempt["attemptId"], question["questionId"], question["correctOptionIds"])
+    assert submitted.status_code == 200
+    active = client.get("/v1/attempts/active", headers=headers)
+    assert active.status_code == 200
+    assert active.json()["items"][0]["attemptId"] == attempt["attemptId"]
+    previous = client.get(f"/v1/attempts/{attempt['attemptId']}/answers/0", headers=headers)
+    assert previous.status_code == 200
+    assert previous.json()["question"]["questionId"] == question["questionId"]
+    assert client.get(f"/v1/attempts/{attempt['attemptId']}/answers/1", headers=headers).status_code == 404
+    assert client.get(
+        f"/v1/attempts/{attempt['attemptId']}/answers/0", headers=login("another-user")
+    ).status_code == 404
+
+
+def test_active_attempts_hide_legacy_quizzes_without_a_saved_user_topic(client, play):
+    headers, _, _ = play
+
+    active = client.get("/v1/attempts/active", headers=headers)
+
+    assert active.status_code == 200
+    assert active.json() == {"items": []}
+
+
 def finish(client, headers, attempt_id, fixed_data, *, wrong=False, skip_last=False):
     results = []
     items = fixed_data["questions"][:-1] if skip_last else fixed_data["questions"]
@@ -131,9 +202,90 @@ def test_first_submission_is_locked_and_returns_sources(client, play, fixed_data
     assert first["evidence"][0]["sourceUrl"].startswith("https://")
     assert first["explanation"]
     response = choose(client, headers, aid, qid, ["o2"]).json()
-    assert response == first
+    assert response["coinSettlementNew"] is False
+    assert first["coinDelta"] == 10
+    assert first["coinSettlementNew"] is True
+    assert first["coinBalance"] == 10
+    reviewed = client.get(f"/v1/attempts/{aid}/answers/0", headers=headers).json()
+    assert reviewed["coinSettlementNew"] is False
     next_question = client.get(f"/v1/attempts/{aid}", headers=headers).json()["question"]
     assert next_question["index"] == 1
+
+
+def test_coins_are_settled_once_per_user_and_question_across_attempts(
+    client, play, fixed_data, database
+):
+    from app.db import Quiz
+
+    headers, quiz_id, attempt = play
+    first = fixed_data["questions"][0]
+    good = choose(
+        client, headers, attempt["attemptId"], first["questionId"], first["correctOptionIds"]
+    )
+    assert (good.json()["coinDelta"], good.json()["coinBalance"]) == (10, 10)
+
+    with database.begin() as db:
+        quiz = db.get(Quiz, quiz_id)
+        content = quiz.content.copy()
+        content["questions"] = [
+            dict(first, questionId="renamed-semantic-question"),
+            *content["questions"][1:],
+        ]
+        quiz.content = content
+
+    restarted = client.post(
+        "/v1/attempts",
+        json={"quizId": quiz_id},
+        headers={**headers, "Idempotency-Key": "second-attempt"},
+    ).json()
+    wrong = next(
+        option["optionId"]
+        for option in first["options"]
+        if option["optionId"] not in first["correctOptionIds"]
+    )
+    duplicate = choose(
+        client, headers, restarted["attemptId"], restarted["question"]["questionId"], [wrong]
+    ).json()
+    assert (duplicate["coinDelta"], duplicate["coinBalance"]) == (0, 10)
+    assert duplicate["coinSettlementNew"] is False
+
+    assert client.get("/v1/me", headers=headers).json()["coinBalance"] == 10
+
+
+def test_wrong_answer_at_zero_does_not_create_negative_balance(client, play, fixed_data):
+    headers, _, attempt = play
+    question = fixed_data["questions"][0]
+    wrong = next(
+        option["optionId"]
+        for option in question["options"]
+        if option["optionId"] not in question["correctOptionIds"]
+    )
+    receipt = choose(client, headers, attempt["attemptId"], question["questionId"], [wrong]).json()
+    assert (receipt["coinDelta"], receipt["coinBalance"]) == (0, 0)
+    assert receipt["coinSettlementNew"] is True
+
+
+def test_wrong_answer_deducts_five_without_exceeding_balance(client, play, fixed_data, database):
+    from app.db import User
+
+    headers, _, attempt = play
+    current_question = attempt["question"]
+    question = next(
+        item for item in fixed_data["questions"] if item["questionId"] == current_question["questionId"]
+    )
+    user_id = client.get("/v1/me", headers=headers).json()["userId"]
+    with database.begin() as db:
+        db.get(User, user_id).coin_balance = 10
+    wrong = next(
+        option["optionId"]
+        for option in question["options"]
+        if option["optionId"] not in question["correctOptionIds"]
+    )
+    penalty = choose(
+        client, headers, attempt["attemptId"], current_question["questionId"], [wrong]
+    ).json()
+    assert (penalty["coinDelta"], penalty["coinBalance"]) == (-5, 5)
+    assert penalty["coinSettlementNew"] is True
 
 
 @pytest.mark.parametrize("complete_set", [True, False])
@@ -160,6 +312,7 @@ def test_concurrent_choices_share_the_first_receipt(client, play):
                 lambda option: choose(client, headers, aid, qid, [option]).json(), ["o1", "o2"]
             )
         )
+    assert {result.pop("coinSettlementNew") for result in results} == {False, True}
     assert results[0] == results[1]
 
 
@@ -181,12 +334,13 @@ def test_completion_is_atomic_and_scores_only_real_answers(client, play, fixed_d
                 range(2),
             )
         )
+    assert {result.pop("coinSettlementNew") for result in results} == {False, True}
     assert results[0] == results[1]
     rid = results[0]["recordId"]
     detail = client.get(f"/v1/records/{rid}", headers=headers).json()
-    assert detail["totalQuestions"] == 20
-    assert detail["correctCount"] == 19
-    assert len(detail["answers"]) == 20
+    assert detail["totalQuestions"] == 12
+    assert detail["correctCount"] == 11
+    assert len(detail["answers"]) == 12
     assert detail["answers"][-1]["recordId"] == rid
     assert detail["aiSummary"]["status"] == "QUEUED"
     with database() as db:
@@ -213,7 +367,7 @@ def test_last_answer_rolls_back_if_record_write_fails(client, play, fixed_data, 
         result = choose(failing, headers, aid, last["questionId"], last["correctOptionIds"])
     assert result.status_code == 500
     with database.begin() as db:
-        assert db.get(Attempt, aid).answered_count == 19
+        assert db.get(Attempt, aid).answered_count == 11
         assert db.get(AttemptAnswer, (aid, last["questionId"])) is None
         assert db.scalar(select(func.count()).select_from(Record)) == 0
         assert db.scalar(select(func.count()).select_from(RecordSummary)) == 0
@@ -234,7 +388,7 @@ def test_history_snapshot_survives_quiz_removal_and_is_private(
         db.delete(db.get(Quiz, quiz_id))
     response = client.get(f"/v1/records/{rid}", headers=headers)
     assert response.status_code == 200
-    assert response.json()["correctCount"] == 20
+    assert response.json()["correctCount"] == 12
     assert response.json()["answers"][0]["evidence"][0]["text"]
     other = login("device-888888")
     assert client.get("/v1/records", headers=other).json()["items"] == []
@@ -290,7 +444,7 @@ def test_summary_retry_is_private_and_can_only_be_accepted_once(
         summary.call_count = 2
     failure = client.get(f"/v1/records/{record_id}", headers=headers).json()
     assert failure["aiSummary"]["error"]["retryable"]
-    assert failure["correctCount"] == 19
+    assert failure["correctCount"] == 11
     assert (
         client.post(
             path, headers={**login("device-123999"), "Idempotency-Key": "cross-user"}
@@ -512,7 +666,7 @@ def test_migration_backfills_takeaway_sources_from_retained_records(
         with database.begin() as db:
             db.delete(db.get(Quiz, quiz_id))
 
-    config = Config(str(DATA.parents[1] / "alembic.ini"))
+    config = Config(str(DATA.parents[2] / "alembic.ini"))
     with database.kw["bind"].begin() as connection:
         config.attributes["connection"] = connection
         command.downgrade(config, "0005_summary_retry_keys")
@@ -521,3 +675,22 @@ def test_migration_backfills_takeaway_sources_from_retained_records(
     result = client.get(f"/v1/records/{record_id}", headers=headers)
     expected = {question_source_id, "retained-quiz-only"} if keep_quiz else {question_source_id}
     assert {item["evidenceId"] for item in result.json()["takeawayEvidence"]} == expected
+
+
+def test_latest_attempt_returns_progress_only_to_owner(client, play, login, fixed_data):
+    headers, quiz_id, attempt = play
+    path = f"/v1/quizzes/{quiz_id}/latest-attempt"
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["attemptId"] == attempt["attemptId"]
+    assert response.json()["answeredCount"] == 0
+    question = fixed_data["questions"][0]
+    choose(
+        client,
+        headers,
+        attempt["attemptId"],
+        question["questionId"],
+        [question["correctOptionIds"][0]],
+    )
+    assert client.get(path, headers=headers).json()["answeredCount"] == 1
+    assert client.get(path, headers=login("other-device-id")).status_code == 404

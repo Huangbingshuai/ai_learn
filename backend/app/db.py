@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -37,6 +38,95 @@ class User(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
     app_id: Mapped[str] = mapped_column(String(80))
     openid: Mapped[str] = mapped_column(String(128))
+    nickname: Mapped[str | None] = mapped_column(String(30))
+    coin_balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class CoinSettlement(Base):
+    __tablename__ = "coin_settlements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_fingerprint", name="uq_coin_user_question"),
+        CheckConstraint("coin_delta BETWEEN -5 AND 10", name="ck_coin_delta"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    question_fingerprint: Mapped[str] = mapped_column(String(64))
+    is_correct: Mapped[bool] = mapped_column(Boolean)
+    coin_delta: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MistakeStatus(StrEnum):
+    TO_REVIEW = "TO_REVIEW"
+    MASTERED = "MASTERED"
+
+
+class FavoriteItem(Base):
+    __tablename__ = "favorite_items"
+    __table_args__ = (UniqueConstraint("user_id", "fingerprint", name="uq_favorite_user_fingerprint"),)
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    evidence: Mapped[list] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MistakeItem(Base):
+    __tablename__ = "mistake_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "fingerprint", name="uq_mistake_user_fingerprint"),
+        CheckConstraint("wrong_count > 0", name="ck_mistake_wrong_count"),
+        CheckConstraint("status IN ('TO_REVIEW', 'MASTERED')", name="ck_mistake_status"),
+        Index(
+            "ix_mistakes_user_recent",
+            "user_id",
+            text("last_wrong_at DESC"),
+            text("fingerprint DESC"),
+        ),
+        Index("ix_mistakes_user_status", "user_id", "status"),
+        Index("ix_mistakes_user_topic", "user_id", "topic_key"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    latest_receipt: Mapped[dict] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    wrong_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    first_wrong_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_wrong_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(12), default=MistakeStatus.TO_REVIEW.value, server_default="TO_REVIEW"
+    )
+    mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MistakeAnswerEvent(Base):
+    __tablename__ = "mistake_answer_events"
+    __table_args__ = (
+        UniqueConstraint("user_id", "attempt_id", "question_id", name="uq_mistake_answer_event"),
+        Index("ix_mistake_events_user_fingerprint", "user_id", "fingerprint"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    question_id: Mapped[str] = mapped_column(String(64))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    question_snapshot: Mapped[dict] = mapped_column(JSONB)
+    receipt_snapshot: Mapped[dict] = mapped_column(JSONB)
+    topic_key: Mapped[str] = mapped_column(String(64))
+    topic_title: Mapped[str] = mapped_column(String(100))
+    answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):
@@ -68,7 +158,7 @@ class GenerationJob(Base):
     __tablename__ = "generation_jobs"
     __table_args__ = (
         UniqueConstraint("user_id", "source", "idempotency_key", name="uq_generation_idempotency"),
-        CheckConstraint("source IN ('TOPIC', 'FIXED')", name="ck_generation_source"),
+        CheckConstraint("source IN ('TOPIC', 'FIXED', 'PRACTICE')", name="ck_generation_source"),
         CheckConstraint(
             "status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')", name="ck_generation_status"
         ),
@@ -131,6 +221,7 @@ class SavedTopic(Base):
     )
     topic_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(100))
+    original_input: Mapped[str | None] = mapped_column(String(80))
     scope: Mapped[str] = mapped_column(String(240))
     evidence: Mapped[list] = mapped_column(JSONB)
     evidence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -146,6 +237,7 @@ class Attempt(Base):
             "correct_count BETWEEN 0 AND answered_count AND answered_count BETWEEN 0 AND 20",
             name="ck_attempt_progress",
         ),
+        CheckConstraint("purpose IN ('LEARNING', 'PRACTICE')", name="ck_attempt_purpose"),
         Index("ix_attempts_quiz_status", "quiz_id", "status"),
     )
 
@@ -156,6 +248,8 @@ class Attempt(Base):
     status: Mapped[str] = mapped_column(String(12), default="ACTIVE")
     answered_count: Mapped[int] = mapped_column(Integer, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
+    draft_option_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    purpose: Mapped[str] = mapped_column(String(12), default="LEARNING", server_default="LEARNING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     rules_version: Mapped[str] = mapped_column(String(32))
 

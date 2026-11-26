@@ -58,6 +58,18 @@ export const generationPhases = {
   VERIFYING: '核验答案与讲解',
 } as const
 
+const generationProgressRanges: Record<keyof typeof generationPhases, [number, number]> = {
+  RESOLVING_TOPIC: [6, 22],
+  READING_SOURCES: [22, 48],
+  GENERATING: [48, 73],
+  VERIFYING: [73, 95],
+}
+
+export function generationProgressPercent(phase: keyof typeof generationPhases | null | undefined, elapsedMs: number): number {
+  const [start, end] = phase ? generationProgressRanges[phase] : [2, 5]
+  return Math.min(end, start + Math.floor(Math.max(0, elapsedMs) / 2500))
+}
+
 export function formatElapsed(startedAt: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.floor((now - startedAt) / 1000))
   const minutes = Math.floor(seconds / 60)

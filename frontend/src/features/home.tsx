@@ -1,132 +1,60 @@
 import { Button, Image, Input, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
-import { api, type PendingGeneration, type RestartGroup } from '../api/client'
-import { messageForError } from '../api/request'
-import type { Topic } from '../api/types'
+import type { ReactNode } from 'react'
+import { api } from '../api/client'
 import cover from '../assets/cover.webp'
 import { Action, ErrorNote } from '../components/comic'
-import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
+import { topicInputError } from './flow'
+import { topicIdeas } from './topic-ideas'
 
 export function HomeScreen({
-  input, error, restart, pending, onEdit, onError, onGenerate, onTopic, onPending, onFixedQuiz, onRestart,
+  input, error, generating, generationProgress, currentAttemptId, onEdit, onError, onGenerate, onNavigate,
 }: {
   input: string
   error: string
-  restart?: RestartGroup
-  pending: PendingGeneration[]
+  generating: boolean
+  generationProgress?: ReactNode
+  currentAttemptId?: string
   onEdit: (input: string) => void
   onError: (message: string) => void
   onGenerate: (topic: string) => void
-  onTopic: (topic: Topic) => void
-  onPending: (intent: PendingGeneration) => void
-  onFixedQuiz: () => void
-  onRestart: (group: RestartGroup) => void
+  onNavigate: (destination: 'questionBank' | 'mistakeBook' | 'favorites' | 'answer') => void
 }) {
-  const [topics, setTopics] = useState<Topic[]>()
-  const [topicLoadError, setTopicLoadError] = useState('')
-  const [nextCursor, setNextCursor] = useState<string>()
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [reload, setReload] = useState(0)
-  const [now, setNow] = useState(Date.now)
-  const canRestart = restart && restartAvailable(restart.quizExpiresAt, now)
+  const [ideaPage, setIdeaPage] = useState(0)
+  const [topicCount, setTopicCount] = useState<string>()
+  const [pendingMistakes, setPendingMistakes] = useState<number>()
+  const [favoriteCount, setFavoriteCount] = useState<number>()
+  const [answerInfo, setAnswerInfo] = useState<{ title: string; progress: string }>()
 
   useEffect(() => {
     let active = true
-    setTopicLoadError('')
-    api.topics().then(({ items, nextCursor }) => {
-      if (!active) return
-      setTopics(items)
-      setNextCursor(nextCursor ?? undefined)
-    }).catch((problem: unknown) => {
-      if (active) setTopicLoadError(messageForError(problem))
-    })
+    api.topics().then((page) => {
+      if (active) setTopicCount(`${page.items.length}${page.nextCursor ? '+' : ''}`)
+    }).catch(() => {})
+    api.mistakes().then((page) => {
+      if (active) setPendingMistakes(page.pendingCount)
+    }).catch(() => {})
+    api.favorites().then((page) => {
+      if (active) setFavoriteCount(page.items.length)
+    }).catch(() => {})
+    async function loadAnswerProgress() {
+      const current = currentAttemptId ? await api.attempt(currentAttemptId).catch(() => undefined) : undefined
+      const attempt = current?.purpose === 'LEARNING' && current.status === 'ACTIVE' ? current
+        : (await api.activeAttempts()).items.find((item) => item.purpose === 'LEARNING')
+      if (active) setAnswerInfo(attempt ? { title: attempt.topicTitle, progress: `${attempt.answeredCount}/${attempt.totalQuestions}` } : undefined)
+    }
+    void loadAnswerProgress().catch(() => {})
     return () => { active = false }
-  }, [reload])
-
-  useEffect(() => {
-    if (!restart) return
-    const wait = Date.parse(restart.quizExpiresAt) - Date.now() - RESTART_CUTOFF_MS
-    if (wait <= 0) return
-    const timer = setTimeout(() => setNow(Date.now()), wait)
-    return () => clearTimeout(timer)
-  }, [restart])
+  }, [currentAttemptId])
 
   function submitTopic() {
+    if (generating) return
     const problem = topicInputError(input)
     if (problem) onError(problem)
     else onGenerate(input.trim())
   }
 
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return
-    setLoadingMore(true)
-    setTopicLoadError('')
-    try {
-      const result = await api.topics(nextCursor)
-      setTopics((previous) => {
-        const shown = new Set(previous?.map((entry) => entry.topicKey))
-        return [...(previous ?? []), ...result.items.filter((entry) => !shown.has(entry.topicKey))]
-      })
-      setNextCursor(result.nextCursor ?? undefined)
-    } catch (problem) {
-      setTopicLoadError(messageForError(problem))
-    } finally {
-      setLoadingMore(false)
-    }
-  }
-
   return <>
-    <Text className='home-caption'>一组 20 道题，每题都有讲解</Text>
-    <View className='topic-form'>
-      <View className='topic-field'>
-        <Input
-          className={`topic-input${error ? ' invalid' : ''}`}
-          type='text'
-          value={input}
-          maxlength={-1}
-          confirmType='go'
-          placeholder='输入主题，例如「为什么会有四季」'
-          placeholderStyle='color: #60566c'
-          aria-label='学习主题'
-          onInput={(event) => onEdit(event.detail.value)}
-          onConfirm={submitTopic}
-        />
-        <Text className='char-count'>{topicLength(input)} / 80</Text>
-      </View>
-      {error && <ErrorNote>{error}</ErrorNote>}
-      <Action onClick={submitTopic}>生成练习</Action>
-    </View>
-    {(pending.length > 0 || restart) && <View className='home-continue'>
-      {pending.map((intent) => <Button
-        className='continue-row ui-button'
-        hoverClass='press-offset'
-        key={intent.key}
-        onClick={() => onPending(intent)}
-      >
-        <View className='continue-copy'>
-          <Text className='continue-title'>{intent.title}</Text>
-          <Text className='continue-meta'>
-            {intent.status === 'SUCCEEDED'
-              ? '题组已生成，去答题'
-              : intent.phase ? generationPhases[intent.phase] : '正在出题'}
-          </Text>
-        </View>
-        <Text className='continue-arrow' aria-hidden>›</Text>
-      </Button>)}
-      {restart && <Button
-        className='continue-row is-restart ui-button'
-        hoverClass='press-offset'
-        onClick={() => onRestart(restart)}
-      >
-        <View className='continue-copy'>
-          <Text className='continue-title'>{restart.topicTitle}</Text>
-          <Text className='continue-meta'>
-            {canRestart ? '可以从第 1 题重新开始' : '题组即将到期，重新生成'}
-          </Text>
-        </View>
-        <Text className='continue-arrow' aria-hidden>›</Text>
-      </Button>}
-    </View>}
     <View className='comic-cover'>
       <Image className='cover-art' src={cover} mode='widthFix' aria-label='翻开的书里跳出一颗地球，戴眼镜的学生在旁边发问' />
       <View className='cover-title'>
@@ -138,31 +66,45 @@ export function HomeScreen({
         <Text>校服啦？</Text>
       </View>
     </View>
-    <View className='topic-picker'>
-      <Text className='h2'>已保存主题</Text>
-      {topics && <View className='topic-options'>
-        {topics.map((topic) => <Button
-          className={`topic ui-button ${topic.art === 'topic' ? 'saved-topic' : topic.art}`}
-          key={topic.topicKey}
-          hoverClass='press-offset'
-          onClick={() => onTopic(topic)}
-        >
-          <View className='topic-symbol' aria-hidden />
-          <Text className='topic-title'>{topic.title}</Text><Text className='topic-arrow' aria-hidden>›</Text>
-        </Button>)}
-      </View>}
-      {!topics && (topicLoadError ? <View className='topic-load-error'>
-        <ErrorNote>{topicLoadError}</ErrorNote>
-        <Action secondary onClick={() => setReload((version) => version + 1)}>重新加载主题</Action>
-      </View> : <Text className='stage-note'>正在加载主题…</Text>)}
-      {topics?.length === 0 && <Text className='stage-note'>出题成功后，主题会出现在这里。</Text>}
-      {topics && topicLoadError && <ErrorNote>{topicLoadError}</ErrorNote>}
-      {nextCursor && <View className='topic-load-more'>
-        <Action secondary disabled={loadingMore} onClick={() => { void loadMore() }}>
-          {loadingMore ? '正在加载…' : '查看更多主题'}
-        </Action>
-      </View>}
+    <View className='topic-form'>
+      {generationProgress}
+      <View className='topic-field'>
+        <Input className={`topic-input${error ? ' invalid' : ''}`} type='text' value={input} maxlength={-1}
+          confirmType='go' placeholder='输入你想弄懂的问题'
+          placeholderStyle='color: #60566c' aria-label='学习主题' disabled={generating}
+          onInput={(event) => { if (!generating) onEdit(event.detail.value) }} onConfirm={submitTopic} />
+      </View>
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {!generating && <Action onClick={submitTopic}>生成练习</Action>}
     </View>
-    {__QINGZHI_DEV_FIXED_QUIZ__ && <Action secondary onClick={onFixedQuiz}>打开开发固定题组</Action>}
+    <View className='home-ideas'>
+      <View className='home-ideas-head'>
+        <Text className='home-ideas-title'>还没想好学什么？</Text>
+        <Button className='home-ideas-refresh ui-button' hoverClass='none' disabled={generating}
+          onClick={() => setIdeaPage((page) => (page + 1) % topicIdeas.length)}>换一组 ↻</Button>
+      </View>
+      <View className='home-idea-list'>
+        {topicIdeas[ideaPage].map((idea, index) => <Button key={idea} disabled={generating} className={`home-idea ui-button idea-${index}`}
+          hoverClass='row-press' onClick={() => { if (!generating) onEdit(idea) }}>{idea}<Text>＋</Text></Button>)}
+      </View>
+    </View>
+    <View className='home-shortcuts'>
+      <Button className='home-shortcut home-shortcut-library ui-button' hoverClass='press-offset' onClick={() => onNavigate('questionBank')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>题库</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{topicCount ?? '–'}</Text><Text className='home-shortcut-unit'>组主题</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-mistakes ui-button' hoverClass='press-offset' onClick={() => onNavigate('mistakeBook')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>错题本</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{pendingMistakes ?? '–'}</Text><Text className='home-shortcut-unit'>道错题</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-favorites ui-button' hoverClass='press-offset' onClick={() => onNavigate('favorites')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>收藏夹</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{favoriteCount ?? '–'}</Text><Text className='home-shortcut-unit'>道收藏</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-answer ui-button' hoverClass='press-offset' onClick={() => onNavigate('answer')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>答题</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        {answerInfo && <View className='home-shortcut-meta home-shortcut-answer-meta'><Text className='home-shortcut-answer-progress'>{answerInfo.title}</Text><Text className='home-shortcut-answer-count'>{answerInfo.progress}</Text></View>}
+      </Button>
+    </View>
   </>
 }

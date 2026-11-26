@@ -57,7 +57,9 @@ def run_topic(client, topic, timeout, *, expect_saved=False):
     path = f"/v1/attempts/{attempt['attemptId']}"
     receipts = []
     types = set()
-    for index in range(20):
+    total_questions = attempt["totalQuestions"]
+    assert total_questions == 12
+    for index in range(total_questions):
         question = attempt["question"]
         assert question["index"] == index and question["aiGenerated"]
         assert "correctOptionIds" not in question and "explanation" not in question
@@ -75,7 +77,7 @@ def run_topic(client, topic, timeout, *, expect_saved=False):
                 request(client, "PUT", receipt_path, json={"selectedOptionIds": changed}) == receipt
             )
         receipts.append(receipt)
-        if index < 19:
+        if index < total_questions - 1:
             assert receipt["recordId"] is None
             attempt = request(client, "GET", path)
 
@@ -86,9 +88,9 @@ def run_topic(client, topic, timeout, *, expect_saved=False):
     record_path = f"/v1/records/{record_id}"
     basic = request(client, "GET", record_path)
     score = sum(receipt["isCorrect"] for receipt in receipts)
-    assert basic["totalQuestions"] == 20 and basic["correctCount"] == score
-    assert basic["takeaways"] and len(basic["answers"]) == 20
-    print(f"{topic} 完成 20 题，答对 {score} 题；开始等待真实总结", flush=True)
+    assert basic["totalQuestions"] == total_questions and basic["correctCount"] == score
+    assert basic["takeaways"] and len(basic["answers"]) == total_questions
+    print(f"{topic} 完成 {total_questions} 题，答对 {score} 题；开始等待真实总结", flush=True)
     complete = wait_for(client, record_path, timeout, field="aiSummary")
     summary = complete["aiSummary"]["content"]
     assert summary["knowledgeReview"] and summary["reviewSuggestions"]
@@ -106,14 +108,14 @@ def run_topic(client, topic, timeout, *, expect_saved=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8000")
-    parser.add_argument("--topic", action="append")
+    parser.add_argument("--topic", action="append", required=True)
     parser.add_argument("--timeout", type=float, default=720)
     parser.add_argument("--expect-saved-topic", action="store_true")
     args = parser.parse_args()
     with httpx.Client(base_url=args.api, timeout=15, trust_env=False) as client:
         session = request(client, "POST", "/v1/dev/auth", json={"deviceId": f"smoke-{uuid4().hex}"})
         client.headers["Authorization"] = f"Bearer {session['accessToken']}"
-        for topic in args.topic or ["四季成因", "月相变化"]:
+        for topic in args.topic:
             run_topic(client, topic, args.timeout, expect_saved=args.expect_saved_topic)
 
 

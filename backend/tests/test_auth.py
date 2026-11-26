@@ -30,11 +30,38 @@ def test_development_login_keeps_only_token_digest(client, database):
         assert rows[0].expires_at - rows[0].created_at == timedelta(hours=12)
 
 
+def test_user_can_read_and_update_their_profile_without_exposing_provider_identity(client, login):
+    headers = login()
+    current = client.get("/v1/me", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["nickname"] is None
+    assert current.json()["coinBalance"] == 0
+    assert "openid" not in current.json()
+
+    updated = client.patch("/v1/me", json={"nickname": "小明"}, headers=headers)
+    assert updated.status_code == 200
+    assert updated.json()["nickname"] == "小明"
+    assert client.get("/v1/me", headers=login("device-999999")).json()["nickname"] is None
+
+
+def test_profile_rejects_blank_or_overlong_nickname(client, login):
+    headers = login()
+    assert client.patch("/v1/me", json={"nickname": "  "}, headers=headers).status_code == 422
+    assert client.patch("/v1/me", json={"nickname": "明" * 31}, headers=headers).status_code == 422
+
+
 @pytest.mark.parametrize("code", ["good", "other"])
 def test_wechat_login_keeps_provider_identity_private(client, code):
     login = client.post("/v1/auth/wechat", json={"code": code})
     assert login.status_code == 200
-    assert set(login.json()) == {"accessToken", "expiresAt"}
+    assert set(login.json()) == {"accessToken", "expiresAt", "userId"}
+    assert "openid" not in login.json()
+
+
+def test_wechat_identities_receive_separate_internal_user_ids(client):
+    first = client.post("/v1/auth/wechat", json={"code": "first-user"}).json()
+    second = client.post("/v1/auth/wechat", json={"code": "second-user"}).json()
+    assert first["userId"] != second["userId"]
 
 
 @pytest.mark.parametrize(

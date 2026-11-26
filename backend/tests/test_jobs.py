@@ -21,7 +21,7 @@ def test_generation_idempotency_binds_input_and_quota(client, database, login):
     assert first.status_code == 202
     job = first.json()
     assert job["status"] == "QUEUED"
-    assert job["topicTitle"] == "四季成因"
+    assert job["topicTitle"] == "为什么会有 四季？"
     assert job["quizId"] is None
     same = submit(client, headers, "为什么会有四季", "topic")
     assert same.json() == job
@@ -29,7 +29,7 @@ def test_generation_idempotency_binds_input_and_quota(client, database, login):
     with database() as db:
         rows = db.scalars(select(GenerationJob)).all()
         assert len(rows) == 1
-        assert rows[0].topic_version == "v1"
+        assert rows[0].topic_version is None
         assert len(rows[0].input_digest) == 64
         assert [
             row.count
@@ -75,6 +75,25 @@ def test_new_topic_enqueues_without_catalog_match(client, login, database):
         assert row.topic_key is None and row.topic_version is None
 
 
+def test_builtin_like_topic_is_treated_as_user_input_and_only_one_job_runs(client, login, database):
+    headers = login()
+    first = submit(client, headers, "四季成因", "user-topic").json()
+    assert first["topicTitle"] == "四季成因"
+    assert submit(client, headers, "月相变化", "second-topic").status_code == 409
+    with database() as db:
+        rows = db.scalars(select(GenerationJob)).all()
+        assert len(rows) == 1
+        assert rows[0].topic_key is None
+
+
+def test_home_can_restore_the_users_active_generation(client, login):
+    headers = login()
+    submitted = submit(client, headers, "一次函数", "restore-job").json()
+    restored = client.get("/v1/generation-jobs/current", headers=headers)
+    assert restored.status_code == 200
+    assert restored.json()["jobId"] == submitted["jobId"]
+
+
 def test_atomic_job_quota_and_concurrent_idempotency(database, settings):
     config = settings.model_copy(update={"user_daily_generation_limit": 1})
     with TestClient(create_app(config, database)) as client:
@@ -88,6 +107,10 @@ def test_atomic_job_quota_and_concurrent_idempotency(database, settings):
             )
         assert [response.status_code for response in responses] == [202, 202]
         assert responses[0].json() == responses[1].json()
+        assert submit(client, headers, "月相变化", "different").status_code == 409
+        with database.begin() as db:
+            first_job_id = db.scalar(select(GenerationJob.id))
+            db.get(GenerationJob, first_job_id).status = "FAILED"
         assert submit(client, headers, "月相变化", "different").status_code == 429
     with database() as db:
         assert db.scalar(select(func.count()).select_from(GenerationJob)) == 1
@@ -124,8 +147,8 @@ def test_large_request_is_rejected_without_logging_input(client, login):
 
 
 def test_job_poll_serves_only_successfully_published_quizzes(client, database, login, settings):
-    from app.domain.topics import load_fixed_quiz
     from app.worker.queue import Worker
+    from tests.topic_fixtures import get_topic_version, load_fixed_quiz
 
     class Model:
         def generate(self, _topic):
@@ -136,6 +159,13 @@ def test_job_poll_serves_only_successfully_published_quizzes(client, database, l
 
     headers = login()
     job = submit(client, headers, "四季", "generate").json()
+    topic = get_topic_version("seasons", "v1")
+    topic.update({"scope": "测试范围", "originalInput": "四季", "version": "web-v1", "evidenceAt": utcnow().isoformat()})
+    with database.begin() as db:
+        row = db.get(GenerationJob, job["jobId"])
+        row.topic_input = None
+        row.topic_key = topic["topicKey"]
+        row.checkpoint = {"topic": topic}
     path = f"/v1/generation-jobs/{job['jobId']}"
     assert Worker(settings, database, Model()).process_once()
     result = client.get(path, headers=headers).json()
@@ -171,3 +201,29 @@ def test_job_poll_returns_only_public_provider_failure(client, database, login):
     assert result["quizId"] is None
     assert set(result["error"]) == {"code", "message", "requestId", "retryable"}
     assert not result["error"]["retryable"]
+
+
+def test_zero_daily_limits_allow_unlimited_generation(database, settings):
+    config = settings.model_copy(
+        update={"user_daily_generation_limit": 0, "global_daily_generation_limit": 0}
+    )
+    with TestClient(create_app(config, database)) as client:
+        token = client.post("/v1/dev/auth", json={"deviceId": "unlimited-device"}).json()[
+            "accessToken"
+        ]
+        headers = {"Authorization": f"Bearer {token}"}
+        for index in range(12):
+            response = submit(client, headers, f"自定义主题 {index}", f"unlimited-{index}")
+            assert response.status_code == 202
+            with database.begin() as db:
+                db.get(GenerationJob, response.json()["jobId"]).status = "FAILED"
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(GenerationJob)) == 12
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(RateLimit)
+                .where(RateLimit.key.like("generation:%"))
+            )
+            == 0
+        )

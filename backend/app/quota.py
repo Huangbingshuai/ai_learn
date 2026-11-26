@@ -13,6 +13,8 @@ class QuotaReached(Exception):
 
 
 def reserve_quota(db: Session, key: str, start: datetime, end: datetime, limit: int) -> None:
+    if limit == 0:
+        return
     count = db.scalar(
         insert(RateLimit)
         .values(key=key, window_start=start, count=1, expires_at=end)
@@ -52,4 +54,4 @@ def summary_quota_full(db: Session, user_id: str, now: datetime, settings: Setti
             RateLimit.window_start == _day(now), RateLimit.key.in_(budgets)
         )
     )
-    return any(count >= budgets[key] for key, count in rows)
+    return any(budgets[key] > 0 and count >= budgets[key] for key, count in rows)

@@ -42,6 +42,17 @@ class RecordView(RecordItem):
     takeawayEvidence: list[EvidenceView]
     answers: list[AnswerReceipt]
     aiSummary: SummaryView
+    coinDelta: int | None = None
+    coinBalance: int | None = None
+
+
+def _coin_snapshot(answers: list[dict], total: int) -> tuple[int | None, int | None]:
+    if total <= 0 or len(answers) != total:
+        return None, None
+    if any(type(a.get('coinSettlementNew')) is not bool or type(a.get('coinDelta')) is not int
+           or type(a.get('coinBalance')) is not int for a in answers):
+        return None, None
+    return sum(a['coinDelta'] for a in answers if a['coinSettlementNew']), answers[-1]['coinBalance']
 
 
 def _record_item(record: Record) -> RecordItem:
@@ -96,12 +107,15 @@ def read_record(record_id: UUID, db: DB, user_id: CurrentUser, request: Request)
     if result is None:
         raise not_found()
     record, summary = result
+    coin_delta, coin_balance = _coin_snapshot(record.answers, record.total_questions)
     return RecordView(
         **_record_item(record).model_dump(),
         takeaways=record.takeaways,
         takeawayEvidence=record.takeaway_evidence,
         answers=record.answers,
         aiSummary=_summary_view(summary, request),
+        coinDelta=coin_delta,
+        coinBalance=coin_balance,
     )
 
 
@@ -127,9 +141,14 @@ def list_records(
     db: DB,
     user_id: CurrentUser,
     cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    since: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> RecordPage:
     statement = select(Record).where(Record.user_id == user_id)
+    if since is not None:
+        if since.utcoffset() is None:
+            raise ApiError(422, "INVALID_DATE", "筛选时间需要包含时区信息。")
+        statement = statement.where(Record.completed_at >= since)
     if cursor is not None:
         completed, record_id = _parse_cursor(cursor)
         statement = statement.where(tuple_(Record.completed_at, Record.id) < (completed, record_id))

@@ -1,6 +1,7 @@
 import importlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
@@ -11,8 +12,9 @@ from sqlalchemy import select
 
 from app import db
 from app.worker.ai import AIError
+from tests.topic_fixtures import get_topic_version
 
-DATA = Path(__file__).resolve().parents[1] / "data" / "topics"
+DATA = Path(__file__).resolve().parent / "fixtures" / "topics"
 
 
 @pytest.fixture
@@ -37,7 +39,7 @@ class FakeAI:
 
     def generate(self, topic):
         self.calls.append("generate")
-        assert topic["topicKey"] == "seasons"
+        assert topic["topicKey"] == "live-test"
         return self.generation() if self.generation else self.quiz
 
     def review(self, topic, quiz):
@@ -58,6 +60,11 @@ class FakeAI:
 
 def queue_generation(database, settings, **overrides):
     now = db.utcnow()
+    topic = get_topic_version("seasons", "v1")
+    topic.update({
+        "topicKey": "live-test", "title": "测试主题", "originalInput": "测试主题",
+        "scope": "测试用生成主题", "version": "web-v1", "evidenceAt": now.isoformat(),
+    })
     with database.begin() as session:
         user = db.User(app_id="test-wechat", openid=uuid4().hex)
         session.add(user)
@@ -66,8 +73,9 @@ def queue_generation(database, settings, **overrides):
             **{
                 "user_id": user.id,
                 "source": "TOPIC",
-                "topic_key": "seasons",
-                "topic_version": "v1",
+                "topic_key": "live-test",
+                "topic_version": None,
+                "checkpoint": {"topic": topic},
                 "input_digest": "0" * 64,
                 "idempotency_key": uuid4().hex,
                 "status": "QUEUED",
@@ -100,8 +108,29 @@ def test_accepted_generated_quiz_uses_two_calls_and_publishes_once(
         assert (job.status, job.call_count, job.lease_count) == ("SUCCEEDED", 2, 1)
         assert job.lease_token is None
         assert stored.ai_generated
-        assert len(stored.content["questions"]) == 20
+        assert len(stored.content["questions"]) == 12
         assert {item["evidenceId"] for item in stored.evidence} >= {"earth-tilt"}
+
+
+def test_new_generation_rejects_a_legacy_twenty_question_set(
+    worker_module, database, settings, quiz
+):
+    legacy = deepcopy(quiz)
+    for index in range(8):
+        question = deepcopy(quiz["questions"][index])
+        question["questionId"] = f"legacy-{index + 1}"
+        question["stem"] += f"（旧题组 {index + 1}）"
+        legacy["questions"].append(question)
+    job_id = queue_generation(database, settings)
+    ai = FakeAI(quiz=legacy)
+
+    assert worker_module.Worker(settings, database, ai).process_once()
+
+    with database() as session:
+        job = session.get(db.GenerationJob, job_id)
+        assert job.status == "FAILED"
+        assert job.error_code == "GENERATION_QUALITY_FAILED"
+        assert session.scalar(select(db.Quiz).where(db.Quiz.job_id == job_id)) is None
 
 
 @pytest.mark.parametrize("bad_shape", [False, True])
@@ -115,7 +144,7 @@ def test_worker_repairs_only_once_and_checks_the_repaired_quiz(
     if not bad_shape:
         ai.verdicts.append(failing_review)
     else:
-        ai.generation = lambda: {**quiz, "questions": quiz["questions"][:19]}
+        ai.generation = lambda: {**quiz, "questions": quiz["questions"][:11]}
 
     worker_module.Worker(settings, database, ai).process_once()
 
@@ -234,7 +263,7 @@ def test_transient_failure_requeues_and_reuses_the_same_budget(
 def test_worker_fails_if_the_bound_source_version_is_missing(
     worker_module, database, settings, quiz
 ):
-    job_id = queue_generation(database, settings, topic_version="missing")
+    job_id = queue_generation(database, settings, checkpoint={}, topic_input=None)
     ai = FakeAI(quiz=quiz)
 
     assert worker_module.Worker(settings, database, ai).process_once()
@@ -268,8 +297,8 @@ def queue_summary(database, settings, quiz, *, retry_count=0, call_count=0):
             user_id=user.id,
             topic_title=topic["title"],
             completed_at=now,
-            total_questions=20,
-            correct_count=20,
+            total_questions=len(quiz["questions"]),
+            correct_count=len(quiz["questions"]),
             takeaways=quiz["takeaways"],
             answers=answers,
         )
@@ -335,7 +364,38 @@ def test_summary_with_existing_citations_finishes_without_mutating_record(
         summary = session.get(db.RecordSummary, record_id)
         assert summary.status == "SUCCEEDED"
         assert summary.content == result
-        assert session.get(db.Record, record_id).correct_count == 20
+        assert session.get(db.Record, record_id).correct_count == 12
+
+
+def test_summary_retry_supplies_validation_reason_and_keeps_citation_checks(
+    worker_module, database, settings, quiz
+):
+    record_id = queue_summary(database, settings, quiz)
+    with database.begin() as session:
+        record = session.get(db.Record, record_id)
+        answers = deepcopy(record.answers)
+        answers[0]['isCorrect'] = False
+        record.answers = answers
+
+    ai = FakeAI()
+    item = {'text': '回顾地轴倾斜。', 'questionIds': ['seasons-01'], 'evidenceIds': ['earth-tilt']}
+    bad = {'text': '回顾错题。', 'questionIds': ['seasons-02'], 'evidenceIds': []}
+    def summarize(snapshot):
+        if 'validationFeedback' not in snapshot:
+            return {'knowledgeReview': [item], 'mistakeNotes': [bad], 'reviewSuggestions': [item]}
+        assert snapshot['validationFeedback'] == 'A mistake note must only reference actual mistakes'
+        return {'knowledgeReview': [item], 'mistakeNotes': [item], 'reviewSuggestions': [item]}
+
+    ai.summary = summarize
+    worker = worker_module.Worker(settings, database, ai)
+    assert worker.process_once()
+    with database.begin() as session:
+        summary = session.get(db.RecordSummary, record_id)
+        assert summary.status == 'QUEUED'
+        summary.next_run_at = db.utcnow()
+    assert worker.process_once()
+    with database() as session:
+        assert session.get(db.RecordSummary, record_id).status == 'SUCCEEDED'
 
 
 def test_cleanup_expires_queued_tasks_and_preserves_a_live_lease(worker_module, database, settings):
@@ -383,7 +443,7 @@ def test_summary_day_quota_binds_real_model_calls_and_keeps_basic_result(
             0,
         )
         assert blocked.error_retryable
-        assert session.get(db.Record, second).correct_count == 20
+        assert session.get(db.Record, second).correct_count == 12
 
 
 def test_review_timeout_resumes_repaired_candidate_with_one_call_left(
