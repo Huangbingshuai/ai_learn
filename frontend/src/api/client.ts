@@ -30,8 +30,16 @@ async function transport({ path, method = 'GET', data, idempotencyKey }: Request
   const header: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) header.Authorization = `Bearer ${token}`
   if (idempotencyKey) header['Idempotency-Key'] = idempotencyKey
+  const retryableRequest = method === 'GET' || Boolean(idempotencyKey)
   try {
-    return await Taro.request<unknown>({ url: __QINGZHI_API_BASE_URL__ + path, method, data, header, timeout: 15000 })
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await Taro.request<unknown>({ url: __QINGZHI_API_BASE_URL__ + path, method, data, header, timeout: 15000 })
+      } catch (error) {
+        if (!retryableRequest || attempt >= 1) throw error
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+    }
   } catch {
     throw new RequestError('NETWORK', '连接中断了，检查网络后再试。', 0, true)
   }
@@ -68,6 +76,11 @@ const request = createRequestClient({
 })
 
 export const api = {
+  favorites: () => request<{ items: { fingerprint: string; topicKey: string; topicTitle: string }[] }>({ path: '/v1/favorites' }),
+  favoriteStatus: (attemptId: string, questionId: string) => request<{ fingerprint: string; favorited: boolean }>({ path: `/v1/attempts/${encodeURIComponent(attemptId)}/favorites/${encodeURIComponent(questionId)}` }),
+  addFavorite: (attemptId: string, questionId: string) => request<{ fingerprint: string }>({ path: `/v1/attempts/${encodeURIComponent(attemptId)}/favorites/${encodeURIComponent(questionId)}`, method: 'PUT' }),
+  removeFavorite: (fingerprint: string) => request<void>({ path: `/v1/favorites/${encodeURIComponent(fingerprint)}`, method: 'DELETE' }),
+  startFavoritePractice: (fingerprint: string, idempotencyKey: string) => request<Attempt>({ path: `/v1/favorites/${encodeURIComponent(fingerprint)}/practice`, method: 'POST', idempotencyKey }),
   profile: async () => {
     const profile = await request<UserProfile>({ path: '/v1/me' })
     activeUserId = profile.userId
@@ -107,12 +120,15 @@ export const api = {
   attemptAnswer: (attemptId: string, questionIndex: number) => request<AnswerReceipt>({
     path: `/v1/attempts/${encodeURIComponent(attemptId)}/answers/${questionIndex}`,
   }),
-  records: (cursor?: string) => request<RecordPage>({
-    path: '/v1/records?limit=20' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),
+  records: (cursor?: string, since?: string) => request<RecordPage>({
+    path: '/v1/records?limit=20'
+      + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '')
+      + (since ? `&since=${encodeURIComponent(since)}` : ''),
   }),
   record: (id: string) => request<LearningRecord>({ path: `/v1/records/${encodeURIComponent(id)}` }),
-  mistakes: (status: MistakeStatus, topicKey?: string, cursor?: string) => {
-    const params = [`status=${encodeURIComponent(status)}`, 'limit=20']
+  mistakes: (status?: MistakeStatus, topicKey?: string, cursor?: string) => {
+    const params = ['limit=20']
+    if (status) params.push(`status=${encodeURIComponent(status)}`)
     if (topicKey) params.push(`topicKey=${encodeURIComponent(topicKey)}`)
     if (cursor) params.push(`cursor=${encodeURIComponent(cursor)}`)
     return request<MistakePage>({ path: `/v1/mistakes?${params.join('&')}` })
@@ -125,6 +141,10 @@ export const api = {
     method: 'PATCH',
     data: { status } satisfies BodyFor<'/v1/mistakes/{fingerprint}', 'patch'>,
   }),
+  removeMistake: (fingerprint: string) => request<void>({
+    path: `/v1/mistakes/${encodeURIComponent(fingerprint)}`,
+    method: 'DELETE',
+  }),
   startMistakePractice: (fingerprint: string, idempotencyKey: string) => request<Attempt>({
     path: `/v1/mistakes/${encodeURIComponent(fingerprint)}/practice`, method: 'POST', idempotencyKey,
   }),
@@ -133,7 +153,6 @@ export const api = {
   }),
 }
 
-export type RestartGroup = QuizGroup & { topicTitle: string; attemptId?: string; answeredCount?: number; totalQuestions?: number }
 export type TopicInput = { topic: string } | { topicKey: string }
 export type PendingGeneration = {
   kind: 'generate'
@@ -164,18 +183,4 @@ export function readPendingGenerations(): PendingGeneration[] {
 
 export function savePendingGenerations(entries: PendingGeneration[]) {
   save(userStorageKey(`${SESSION_KEY}.generation.v1`), entries.length ? entries : undefined)
-}
-
-const RESTART_KEY = __QINGZHI_DEV_AUTH__ ? 'qingzhi.restart.dev.v1' : 'qingzhi.restart.wechat.v1'
-
-export function readRestartGroup(): RestartGroup | undefined {
-  const group = readSaved<RestartGroup>(userStorageKey(RESTART_KEY))
-  if (group && typeof group.quizId === 'string' && typeof group.topicTitle === 'string'
-      && typeof group.quizExpiresAt === 'string') return group
-}
-
-export function saveRestartGroup(group?: RestartGroup) {
-  const restart = group && { quizId: group.quizId, topicTitle: group.topicTitle, quizExpiresAt: group.quizExpiresAt,
-    attemptId: group.attemptId, answeredCount: group.answeredCount, totalQuestions: group.totalQuestions }
-  save(userStorageKey(RESTART_KEY), restart)
 }

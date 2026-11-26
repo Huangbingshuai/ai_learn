@@ -1,8 +1,11 @@
 import { defineConfig, type UserConfigExport } from '@tarojs/cli'
+import { dotenvParse } from '@tarojs/helper'
 
 export default defineConfig<'webpack5'>(() => {
   const development = process.env.NODE_ENV === 'development'
+  const localEnv = dotenvParse(process.cwd(), ['QINGZHI_', 'TARO_APP_'], process.env.NODE_ENV)
   const apiBaseUrl = (process.env.QINGZHI_API_BASE_URL || process.env.TARO_APP_API_BASE_URL
+    || localEnv.QINGZHI_API_BASE_URL || localEnv.TARO_APP_API_BASE_URL
     || (development ? 'http://127.0.0.1:8000' : '')).trim().replace(/\/+$/, '')
   if (apiBaseUrl) {
     const url = new URL(apiBaseUrl)

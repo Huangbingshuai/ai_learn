@@ -4,9 +4,10 @@ import type { Mistake, MistakePage } from '../src/api/types'
 import {
   appendMistakePage,
   createMistakeBookState,
+  groupMistakesByTopic,
+  removeMistakeFromBook,
   practiceFinished,
   mistakeBookViewState,
-  setMistakeFilters,
   TAB_DESTINATIONS,
 } from '../src/features/mistakes'
 
@@ -30,31 +31,40 @@ function page(items: Mistake[], nextCursor: string | null = null): MistakePage {
 }
 
 test('shows learning, question bank, answers, mistakes and profile in bottom navigation', () => {
-  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'questionBank', 'answer', 'mistakeBook', 'profile'])
-  assert.deepEqual(TAB_DESTINATIONS.map(({ label }) => label), ['学习', '题库', '答题', '错题本', '我的'])
+  assert.deepEqual(TAB_DESTINATIONS.map(({ key }) => key), ['home', 'questionBank', 'answer', 'mistakeBook', 'favorites', 'profile'])
+  assert.deepEqual(TAB_DESTINATIONS.map(({ label }) => label), ['学习', '题库', '答题', '错题本', '收藏夹', '我的'])
 })
 
-test('changing status or topic filters clears stale pages but keeps total and topic options', () => {
-  const current = {
+test('groups mistakes by topic while preserving question order within each topic', () => {
+  const items = [
+    mistake('a'),
+    { ...mistake('b'), topicKey: 'langgraph', topicTitle: 'LangGraph' },
+    { ...mistake('c'), topicTitle: '四季成因' },
+  ]
+
+  assert.deepEqual(groupMistakesByTopic(items).map((group) => ({
+    topicKey: group.topicKey,
+    title: group.title,
+    fingerprints: group.items.map(({ fingerprint }) => fingerprint),
+  })), [
+    { topicKey: 'seasons', title: '四季成因', fingerprints: ['a', 'c'] },
+    { topicKey: 'langgraph', title: 'LangGraph', fingerprints: ['b'] },
+  ])
+})
+
+test('removes only the requested mistake and updates the count', () => {
+  const state = {
     ...createMistakeBookState(),
-    items: [mistake('a')],
-    nextCursor: 'cursor',
-    pendingCount: 3,
-    topics: [{ topicKey: 'seasons', title: '四季成因' }],
+    items: [mistake('a'), mistake('b')],
+    pendingCount: 2,
     loaded: true,
-    scrollTop: 120,
   }
 
-  const filtered = setMistakeFilters(current, { status: 'mastered', topicKey: 'seasons' })
+  const next = removeMistakeFromBook(state, 'a')
 
-  assert.equal(filtered.status, 'mastered')
-  assert.equal(filtered.topicKey, 'seasons')
-  assert.deepEqual(filtered.items, [])
-  assert.equal(filtered.nextCursor, null)
-  assert.equal(filtered.loaded, false)
-  assert.equal(filtered.scrollTop, 0)
-  assert.equal(filtered.pendingCount, 3)
-  assert.equal(filtered.topics.length, 1)
+  assert.deepEqual(next.items.map(({ fingerprint }) => fingerprint), ['b'])
+  assert.equal(next.pendingCount, 1)
+  assert.equal(next.loaded, true)
 })
 
 test('appends pages without duplicating a semantic question and adopts the latest row', () => {

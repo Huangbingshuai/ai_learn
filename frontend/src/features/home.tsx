@@ -1,41 +1,54 @@
 import { Button, Image, Input, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
-import type { PendingGeneration, RestartGroup } from '../api/client'
+import type { ReactNode } from 'react'
+import { api } from '../api/client'
 import cover from '../assets/cover.webp'
 import { Action, ErrorNote } from '../components/comic'
-import { generationPhases, RESTART_CUTOFF_MS, restartAvailable, topicInputError, topicLength } from './flow'
-
-const topicIdeas = [
-  ['为什么会有彩虹？', '恐龙为什么会灭绝？', '月亮为什么会变圆？', '植物为什么向着太阳长？'],
-  ['猫咪为什么会打呼噜？', '飞机怎么飞上天？', '海水为什么是咸的？', '闪电为什么比雷声先到？'],
-]
+import { topicInputError } from './flow'
+import { topicIdeas } from './topic-ideas'
 
 export function HomeScreen({
-  input, error, restart, pending, onEdit, onError, onGenerate, onPending, onRestart,
+  input, error, generating, generationProgress, currentAttemptId, onEdit, onError, onGenerate, onNavigate,
 }: {
   input: string
   error: string
-  restart?: RestartGroup
-  pending: PendingGeneration[]
+  generating: boolean
+  generationProgress?: ReactNode
+  currentAttemptId?: string
   onEdit: (input: string) => void
   onError: (message: string) => void
   onGenerate: (topic: string) => void
-  onPending: (intent: PendingGeneration) => void
-  onRestart: (group: RestartGroup) => void
+  onNavigate: (destination: 'questionBank' | 'mistakeBook' | 'favorites' | 'answer') => void
 }) {
-  const [now, setNow] = useState(Date.now)
   const [ideaPage, setIdeaPage] = useState(0)
-  const canRestart = restart && restartAvailable(restart.quizExpiresAt, now)
+  const [topicCount, setTopicCount] = useState<string>()
+  const [pendingMistakes, setPendingMistakes] = useState<number>()
+  const [favoriteCount, setFavoriteCount] = useState<number>()
+  const [answerInfo, setAnswerInfo] = useState<{ title: string; progress: string }>()
 
   useEffect(() => {
-    if (!restart) return
-    const wait = Date.parse(restart.quizExpiresAt) - Date.now() - RESTART_CUTOFF_MS
-    if (wait <= 0) return
-    const timer = setTimeout(() => setNow(Date.now()), wait)
-    return () => clearTimeout(timer)
-  }, [restart])
+    let active = true
+    api.topics().then((page) => {
+      if (active) setTopicCount(`${page.items.length}${page.nextCursor ? '+' : ''}`)
+    }).catch(() => {})
+    api.mistakes().then((page) => {
+      if (active) setPendingMistakes(page.pendingCount)
+    }).catch(() => {})
+    api.favorites().then((page) => {
+      if (active) setFavoriteCount(page.items.length)
+    }).catch(() => {})
+    async function loadAnswerProgress() {
+      const current = currentAttemptId ? await api.attempt(currentAttemptId).catch(() => undefined) : undefined
+      const attempt = current?.purpose === 'LEARNING' && current.status === 'ACTIVE' ? current
+        : (await api.activeAttempts()).items.find((item) => item.purpose === 'LEARNING')
+      if (active) setAnswerInfo(attempt ? { title: attempt.topicTitle, progress: `${attempt.answeredCount}/${attempt.totalQuestions}` } : undefined)
+    }
+    void loadAnswerProgress().catch(() => {})
+    return () => { active = false }
+  }, [currentAttemptId])
 
   function submitTopic() {
+    if (generating) return
     const problem = topicInputError(input)
     if (problem) onError(problem)
     else onGenerate(input.trim())
@@ -54,47 +67,44 @@ export function HomeScreen({
       </View>
     </View>
     <View className='topic-form'>
+      {generationProgress}
       <View className='topic-field'>
         <Input className={`topic-input${error ? ' invalid' : ''}`} type='text' value={input} maxlength={-1}
           confirmType='go' placeholder='输入你想弄懂的问题'
-          placeholderStyle='color: #60566c' aria-label='学习主题'
-          onInput={(event) => onEdit(event.detail.value)} onConfirm={submitTopic} />
-        <Text className='char-count'>{topicLength(input)} / 80</Text>
+          placeholderStyle='color: #60566c' aria-label='学习主题' disabled={generating}
+          onInput={(event) => { if (!generating) onEdit(event.detail.value) }} onConfirm={submitTopic} />
       </View>
       {error && <ErrorNote>{error}</ErrorNote>}
-      <Action onClick={submitTopic}>生成练习</Action>
+      {!generating && <Action onClick={submitTopic}>生成练习</Action>}
     </View>
     <View className='home-ideas'>
       <View className='home-ideas-head'>
         <Text className='home-ideas-title'>还没想好学什么？</Text>
-        <Button className='home-ideas-refresh ui-button' hoverClass='none'
+        <Button className='home-ideas-refresh ui-button' hoverClass='none' disabled={generating}
           onClick={() => setIdeaPage((page) => (page + 1) % topicIdeas.length)}>换一组 ↻</Button>
       </View>
       <View className='home-idea-list'>
-        {topicIdeas[ideaPage].map((idea, index) => <Button key={idea} className={`home-idea ui-button idea-${index}`}
-          hoverClass='row-press' onClick={() => onEdit(idea)}>{idea}<Text>＋</Text></Button>)}
+        {topicIdeas[ideaPage].map((idea, index) => <Button key={idea} disabled={generating} className={`home-idea ui-button idea-${index}`}
+          hoverClass='row-press' onClick={() => { if (!generating) onEdit(idea) }}>{idea}<Text>＋</Text></Button>)}
       </View>
     </View>
-    {(pending.length > 0 || restart) && <View className='home-continue'>
-      {pending.map((intent) => <View className='continue-row-shell' key={intent.key}>
-        <View className='continue-copy'>
-          <Text className='continue-title'>{intent.title}</Text>
-          <Text className='continue-meta'>{intent.status === 'SUCCEEDED'
-            ? '已生成 · 开始答题' : intent.phase ? generationPhases[intent.phase] : '正在出题'}</Text>
-        </View>
-        <Action disabled={intent.status === 'QUEUED' || intent.status === 'RUNNING'} onClick={() => onPending(intent)}>
-          {intent.status === 'SUCCEEDED' ? '开始答题' : intent.status === 'FAILED' ? '重新生成' : '生成中'}
-        </Action>
-      </View>)}
-      {restart && <View className='continue-row-shell'>
-        <View className='continue-copy'>
-          <Text className='continue-title'>{restart.topicTitle}</Text>
-          <Text className='continue-meta'>{!canRestart ? '练习已到期'
-            : restart.attemptId && typeof restart.answeredCount === 'number' && typeof restart.totalQuestions === 'number'
-              ? `已答 ${restart.answeredCount}/${restart.totalQuestions} 题` : '尚未开始答题'}</Text>
-        </View>
-        <Action onClick={() => onRestart(restart)}>{canRestart ? '继续练习' : '重新出题'}</Action>
-      </View>}
-    </View>}
+    <View className='home-shortcuts'>
+      <Button className='home-shortcut home-shortcut-library ui-button' hoverClass='press-offset' onClick={() => onNavigate('questionBank')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>题库</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{topicCount ?? '–'}</Text><Text className='home-shortcut-unit'>组主题</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-mistakes ui-button' hoverClass='press-offset' onClick={() => onNavigate('mistakeBook')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>错题本</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{pendingMistakes ?? '–'}</Text><Text className='home-shortcut-unit'>道错题</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-favorites ui-button' hoverClass='press-offset' onClick={() => onNavigate('favorites')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>收藏夹</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        <View className='home-shortcut-meta'><Text className='home-shortcut-count'>{favoriteCount ?? '–'}</Text><Text className='home-shortcut-unit'>道收藏</Text></View>
+      </Button>
+      <Button className='home-shortcut home-shortcut-answer ui-button' hoverClass='press-offset' onClick={() => onNavigate('answer')}>
+        <View className='home-shortcut-heading'><Text className='home-shortcut-label'>答题</Text><Text className='home-shortcut-arrow'>›</Text></View>
+        {answerInfo && <View className='home-shortcut-meta home-shortcut-answer-meta'><Text className='home-shortcut-answer-progress'>{answerInfo.title}</Text><Text className='home-shortcut-answer-count'>{answerInfo.progress}</Text></View>}
+      </Button>
+    </View>
   </>
 }

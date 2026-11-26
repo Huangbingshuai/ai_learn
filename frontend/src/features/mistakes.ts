@@ -1,20 +1,42 @@
-import type { Mistake, MistakePage, MistakeStatus, MistakeTopic } from '../api/types'
+import type { Mistake, MistakePage } from '../api/types'
+
+export type MistakeTopicGroup = { topicKey: string; title: string; items: Mistake[] }
+
+export function groupMistakesByTopic(items: Mistake[]): MistakeTopicGroup[] {
+  const groups = new Map<string, MistakeTopicGroup>()
+  for (const item of items) {
+    let group = groups.get(item.topicKey)
+    if (!group) {
+      group = { topicKey: item.topicKey, title: item.topicTitle, items: [] }
+      groups.set(item.topicKey, group)
+    }
+    group.items.push(item)
+  }
+  return [...groups.values()]
+}
+
+export function removeMistakeFromBook(state: MistakeBookState, fingerprint: string): MistakeBookState {
+  if (!state.items.some((item) => item.fingerprint === fingerprint)) return state
+  return {
+    ...state,
+    items: state.items.filter((item) => item.fingerprint !== fingerprint),
+    pendingCount: Math.max(0, state.pendingCount - 1),
+  }
+}
 
 export const TAB_DESTINATIONS = [
   { key: 'home', label: '学习' },
   { key: 'questionBank', label: '题库' },
   { key: 'answer', label: '答题' },
   { key: 'mistakeBook', label: '错题本' },
+  { key: 'favorites', label: '收藏夹' },
   { key: 'profile', label: '我的' },
 ] as const
 
 export type MistakeBookState = {
-  status: MistakeStatus
-  topicKey: string | null
   items: Mistake[]
   nextCursor: string | null
   pendingCount: number
-  topics: MistakeTopic[]
   loaded: boolean
   scrollTop: number
 }
@@ -27,25 +49,12 @@ export function practiceFinished(answeredCount: number, totalQuestions: number) 
 
 export function createMistakeBookState(): MistakeBookState {
   return {
-    status: 'to_review',
-    topicKey: null,
     items: [],
     nextCursor: null,
     pendingCount: 0,
-    topics: [],
     loaded: false,
     scrollTop: 0,
   }
-}
-
-export function setMistakeFilters(
-  state: MistakeBookState,
-  filters: { status?: MistakeStatus; topicKey?: string | null },
-): MistakeBookState {
-  const status = filters.status ?? state.status
-  const topicKey = filters.topicKey === undefined ? state.topicKey : filters.topicKey
-  if (status === state.status && topicKey === state.topicKey) return state
-  return { ...state, status, topicKey, items: [], nextCursor: null, loaded: false, scrollTop: 0 }
 }
 
 export function appendMistakePage(
@@ -69,7 +78,6 @@ export function appendMistakePage(
     items,
     nextCursor: page.nextCursor,
     pendingCount: page.pendingCount,
-    topics: page.topics,
     loaded: true,
   }
 }

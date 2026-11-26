@@ -84,11 +84,64 @@ export interface paths {
         get: operations["get_mistake_v1_mistakes__fingerprint__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Remove Mistake */
+        delete: operations["remove_mistake_v1_mistakes__fingerprint__delete"];
         options?: never;
         head?: never;
         /** Update Mistake Status */
         patch: operations["update_mistake_status_v1_mistakes__fingerprint__patch"];
+        trace?: never;
+    };
+    "/v1/attempts/{attempt_id}/favorites/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Favorite Status */
+        get: operations["favorite_status_v1_attempts__attempt_id__favorites__question_id__get"];
+        /** Add Favorite */
+        put: operations["add_favorite_v1_attempts__attempt_id__favorites__question_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Favorites */
+        get: operations["list_favorites_v1_favorites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/favorites/{fingerprint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Favorite */
+        delete: operations["delete_favorite_v1_favorites__fingerprint__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/attempts": {
@@ -119,6 +172,23 @@ export interface paths {
         put?: never;
         /** Start Mistake Practice */
         post: operations["start_mistake_practice_v1_mistakes__fingerprint__practice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/favorites/{fingerprint}/practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Mistake Practice */
+        post: operations["start_mistake_practice_v1_favorites__fingerprint__practice_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -450,6 +520,11 @@ export interface components {
              * @default 0
              */
             coinBalance: number;
+            /**
+             * Coinsettlementnew
+             * @default false
+             */
+            coinSettlementNew: boolean;
             /** Recordid */
             recordId?: string | null;
         };
@@ -527,6 +602,15 @@ export interface components {
              * Format: date
              */
             verifiedAt: string;
+        };
+        /** FavoriteView */
+        FavoriteView: {
+            /** Fingerprint */
+            fingerprint: string;
+            /** Topickey */
+            topicKey: string;
+            /** Topictitle */
+            topicTitle: string;
         };
         /** GenerateQuiz */
         GenerateQuiz: {
@@ -743,6 +827,10 @@ export interface components {
             /** Answers */
             answers: components["schemas"]["AnswerReceipt"][];
             aiSummary: components["schemas"]["SummaryView"];
+            /** Coindelta */
+            coinDelta?: number | null;
+            /** Coinbalance */
+            coinBalance?: number | null;
         };
         /** StartAttempt */
         StartAttempt: {
@@ -1037,7 +1125,7 @@ export interface operations {
     list_mistakes_v1_mistakes_get: {
         parameters: {
             query?: {
-                status?: "to_review" | "mastered";
+                status?: ("to_review" | "mastered") | null;
                 topicKey?: string | null;
                 cursor?: string | null;
                 limit?: number;
@@ -1135,6 +1223,53 @@ export interface operations {
             };
         };
     };
+    remove_mistake_v1_mistakes__fingerprint__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_mistake_status_v1_mistakes__fingerprint__patch: {
         parameters: {
             query?: never;
@@ -1176,6 +1311,119 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorView"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    favorite_status_v1_attempts__attempt_id__favorites__question_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_favorite_v1_attempts__attempt_id__favorites__question_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_favorites_v1_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    delete_favorite_v1_favorites__fingerprint__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1260,6 +1508,75 @@ export interface operations {
         };
     };
     start_mistake_practice_v1_mistakes__fingerprint__practice_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "idempotency-key": string;
+            };
+            path: {
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    start_mistake_practice_v1_favorites__fingerprint__practice_post: {
         parameters: {
             query?: never;
             header: {

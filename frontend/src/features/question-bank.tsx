@@ -3,33 +3,47 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { messageForError } from '../api/request'
 import type { Topic } from '../api/types'
-import { Action, ErrorNote, Sheet, StatusPanel } from '../components/comic'
+import { Action, ComicRow, ErrorNote, Sheet, StatusPanel } from '../components/comic'
 
-export function QuestionBankScreen({ onTopic }: {
+export function QuestionBankScreen({ onTopic, onRedo, onHome }: {
   onTopic: (topic: Topic) => void
+  onRedo: (topic: Topic) => void
+  onHome: () => void
 }) {
-  const [topics, setTopics] = useState<Topic[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
+  const [topicPages, setTopicPages] = useState<Topic[][]>([])
+  const [pageCursors, setPageCursors] = useState<(string | null)[]>([])
+  const [pageIndex, setPageIndex] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadingPage, setLoadingPage] = useState(false)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
-  const [deleteTarget, setDeleteTarget] = useState<Topic>()
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set())
-  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [redoPickerOpen, setRedoPickerOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const deletableTopics = topics.filter((topic) => topic.canDelete)
+  const topics = topicPages[pageIndex] ?? []
+  const allLoadedTopics = topicPages.flat()
+  const deletableTopics = allLoadedTopics.filter((topic) => topic.canDelete)
+  const pageDeletableTopics = topics.filter((topic) => topic.canDelete)
   const selectedTopics = deletableTopics.filter((topic) => selectedKeys.has(topic.topicKey))
+  const allPageSelected = pageDeletableTopics.length > 0
+    && pageDeletableTopics.every((topic) => selectedKeys.has(topic.topicKey))
+  const hasNextPage = pageIndex + 1 < topicPages.length || Boolean(pageCursors[pageIndex])
 
   useEffect(() => {
     let active = true
     setLoading(true)
     setError('')
+    setTopicPages([])
+    setPageCursors([])
+    setPageIndex(0)
+    setSelectedKeys(new Set())
+    setSelectionMode(false)
     api.topics().then((page) => {
       if (!active) return
-      setTopics(page.items)
-      setCursor(page.nextCursor ?? null)
+      setTopicPages([page.items])
+      setPageCursors([page.nextCursor ?? null])
     }).catch((problem) => {
       if (active) setError(messageForError(problem))
     }).finally(() => {
@@ -38,37 +52,30 @@ export function QuestionBankScreen({ onTopic }: {
     return () => { active = false }
   }, [reload])
 
-  async function loadMore() {
-    if (!cursor || loadingMore) return
-    setLoadingMore(true)
+  async function goToNextPage() {
+    if (loadingPage || deleting) return
+    if (pageIndex + 1 < topicPages.length) {
+      setPageIndex((current) => current + 1)
+      return
+    }
+    const cursor = pageCursors[pageIndex]
+    if (!cursor) return
+    setLoadingPage(true)
     setError('')
     try {
       const page = await api.topics(cursor)
-      setTopics((previous) => {
-        const shown = new Set(previous.map((topic) => topic.topicKey))
-        return [...previous, ...page.items.filter((topic) => !shown.has(topic.topicKey))]
-      })
-      setCursor(page.nextCursor ?? null)
+      setTopicPages((previous) => [...previous, page.items])
+      setPageCursors((previous) => [...previous, page.nextCursor ?? null])
+      setPageIndex((current) => current + 1)
     } catch (problem) {
       setError(messageForError(problem))
     } finally {
-      setLoadingMore(false)
+      setLoadingPage(false)
     }
   }
 
-  async function deleteTopic() {
-    if (!deleteTarget || deleting) return
-    setDeleting(true)
-    setError('')
-    try {
-      await api.deleteTopic(deleteTarget.topicKey)
-      setTopics((previous) => previous.filter((topic) => topic.topicKey !== deleteTarget.topicKey))
-      setDeleteTarget(undefined)
-    } catch (problem) {
-      setError(messageForError(problem))
-    } finally {
-      setDeleting(false)
-    }
+  function goToPreviousPage() {
+    if (!deleting && pageIndex > 0) setPageIndex((current) => current - 1)
   }
 
   function toggleSelection(topic: Topic) {
@@ -83,9 +90,12 @@ export function QuestionBankScreen({ onTopic }: {
 
   function toggleSelectAll() {
     if (deleting) return
-    setSelectedKeys(selectedTopics.length === deletableTopics.length
-      ? new Set()
-      : new Set(deletableTopics.map((topic) => topic.topicKey)))
+    const pageKeys = pageDeletableTopics.map((topic) => topic.topicKey)
+    setSelectedKeys((previous) => {
+      const next = new Set(previous)
+      pageKeys.forEach((key) => allPageSelected ? next.delete(key) : next.add(key))
+      return next
+    })
   }
 
   function toggleSelectionMode() {
@@ -99,14 +109,20 @@ export function QuestionBankScreen({ onTopic }: {
     setDeleting(true)
     setError('')
     try {
-      const results = await Promise.allSettled(selectedTopics.map((topic) => api.deleteTopic(topic.topicKey)))
-      const succeededKeys = new Set(selectedTopics.filter((_, index) => results[index].status === 'fulfilled')
+      const topicsToDelete = [...selectedTopics]
+      const results = await Promise.allSettled(topicsToDelete.map((topic) => api.deleteTopic(topic.topicKey)))
+      const succeededKeys = new Set(topicsToDelete.filter((_, index) => results[index].status === 'fulfilled')
         .map((topic) => topic.topicKey))
-      const failedKeys = new Set(selectedTopics.filter((_, index) => results[index].status === 'rejected')
+      const failedKeys = new Set(topicsToDelete.filter((_, index) => results[index].status === 'rejected')
         .map((topic) => topic.topicKey))
-      setTopics((previous) => previous.filter((topic) => !succeededKeys.has(topic.topicKey)))
+      const nextPages = topicPages.map((page) => page.filter((topic) => !succeededKeys.has(topic.topicKey)))
+      setTopicPages(nextPages)
+      if (!nextPages[pageIndex]?.length) {
+        const nearestPage = nextPages.findIndex((page) => page.length > 0)
+        setPageIndex(nearestPage < 0 ? 0 : nearestPage)
+      }
       setSelectedKeys(failedKeys)
-      setBatchDeleteOpen(false)
+      setConfirmDeleteOpen(false)
       if (failedKeys.size) {
         setError(`已删除 ${succeededKeys.size} 个，${failedKeys.size} 个删除失败；失败项仍保留，可重新选择后重试。`)
       } else {
@@ -119,24 +135,35 @@ export function QuestionBankScreen({ onTopic }: {
     }
   }
 
+  function redoSelectedTopics() {
+    if (!selectedTopics.length || deleting) return
+    if (selectedTopics.length === 1) onRedo(selectedTopics[0])
+    else setRedoPickerOpen(true)
+  }
+
   return <>
-    {!loading && topics.length > 0 && <View className='library-intro'>
-      <Button className={`topic-selection-toggle ui-button${selectionMode ? ' active' : ''}`}
-        hoverClass='row-press' onClick={toggleSelectionMode}>{selectionMode ? '取消选择' : '选择'}</Button>
-    </View>}
-    {selectionMode && deletableTopics.length > 0 && <View className='topic-selection-panel'>
-      <View className='topic-selection-tools'>
-        <Button className='topic-select-all ui-button' hoverClass='none' onClick={toggleSelectAll}>
-          {selectedTopics.length === deletableTopics.length ? '取消全选' : '全选已加载'}
+    {!loading && deletableTopics.length > 0 && <View className='library-intro'>
+      {selectionMode ? <View className='topic-selection-toolbar'>
+        <Button className='topic-selection-action cancel-action ui-button' hoverClass='row-press' disabled={deleting}
+          onClick={toggleSelectionMode}>取消选择</Button>
+        <Button className={`topic-selection-action select-all ui-button${allPageSelected ? ' selected' : ''}`} hoverClass='row-press' disabled={!pageDeletableTopics.length || deleting}
+          onClick={toggleSelectAll}>
+          <View className='topic-selection-check' aria-hidden>{allPageSelected ? '✓' : ''}</View>
+          {allPageSelected ? '取消全选' : '全选'}
         </Button>
-        <Text className='topic-selected-count'>已选 {selectedTopics.length} 个</Text>
-      </View>
-      <Button className='topic-batch-delete ui-button' hoverClass='row-press' disabled={!selectedTopics.length || deleting}
-        onClick={() => setBatchDeleteOpen(true)}>删除已选主题{selectedTopics.length ? `（${selectedTopics.length}）` : ''}</Button>
+        <Button className='topic-selection-action delete-action ui-button' hoverClass='row-press'
+          disabled={!selectedTopics.length || deleting} onClick={() => setConfirmDeleteOpen(true)}>删除</Button>
+        <Button className='topic-selection-action redo-action ui-button' hoverClass='row-press'
+          disabled={!selectedTopics.length || deleting} onClick={redoSelectedTopics}>重新做题</Button>
+      </View> : <Button className='topic-selection-toggle ui-button'
+        hoverClass='row-press' onClick={toggleSelectionMode}>选择</Button>}
     </View>}
     {error && <ErrorNote>{error}</ErrorNote>}
-    {loading ? <StatusPanel title='正在加载题库…' /> : topics.length === 0 ? <StatusPanel title='题库还是空的'>
-      <Text className='body-copy'>回到“学习”输入感兴趣的内容，生成练习后会自动收进题库。</Text>
+    {loading ? <StatusPanel title='正在加载题库…' />
+      : topics.length === 0 && allLoadedTopics.length === 0 && !pageCursors.some(Boolean) ? <StatusPanel title='题库空空的'>
+      <View className='empty-actions'>
+        <Action onClick={onHome}>去学习</Action>
+      </View>
     </StatusPanel> : <View className='topic-library-list'>
       {topics.map((topic) => <View className='topic-library-row' key={topic.topicKey}>
         <Button className={`topic ui-button topic-library-card user-topic${selectedKeys.has(topic.topicKey) ? ' is-selected' : ''}`}
@@ -144,42 +171,38 @@ export function QuestionBankScreen({ onTopic }: {
           {selectionMode && topic.canDelete && <Text className={`topic-select-mark${selectedKeys.has(topic.topicKey) ? ' checked' : ''}`} aria-hidden>
             {selectedKeys.has(topic.topicKey) ? '✓' : ''}
           </Text>}
-          <View className='topic-symbol' aria-hidden />
           <View className='topic-library-copy'>
             <Text className='topic-title'>{topic.title}</Text>
             {topic.attemptId && typeof topic.answeredCount === 'number'
               && typeof topic.totalQuestions === 'number'
               && <Text className='topic-progress'>{topic.attemptStatus === 'PASSED' ? '已完成' : '已答'} {topic.answeredCount}/{topic.totalQuestions} 题</Text>}
             {topic.originalInput && topic.originalInput.trim() !== topic.title.trim()
-              && <Text className='topic-original-input'>原始主题：{topic.originalInput}</Text>}
+              && <Text className='topic-original-input'>原始提问：{topic.originalInput}</Text>}
           </View>
-          <Text className='topic-arrow' aria-hidden>›</Text>
+          <Text className='mistake-topic-arrow' aria-hidden>›</Text>
         </Button>
-        {topic.canDelete && !selectionMode && <Button className='topic-delete-visible ui-button' hoverClass='row-press'
-          aria-label={`删除主题${topic.title}`} onClick={() => setDeleteTarget(topic)}>
-          <Text aria-hidden>×</Text><Text>删除</Text>
-        </Button>}
       </View>)}
-      {cursor && <View className='topic-load-more'>
-        <Action secondary disabled={loadingMore} onClick={() => { void loadMore() }}>
-          {loadingMore ? '正在加载…' : '加载更多主题'}
-        </Action>
+      {(pageIndex > 0 || hasNextPage) && <View className='topic-pagination'>
+        <Button className='topic-page-button ui-button' hoverClass='row-press' disabled={pageIndex === 0 || loadingPage || deleting}
+          onClick={goToPreviousPage}>上一页</Button>
+        <Text className='topic-page-index'>第 {pageIndex + 1} 页</Text>
+        <Button className='topic-page-button ui-button' hoverClass='row-press' disabled={!hasNextPage || loadingPage || deleting}
+          onClick={() => { void goToNextPage() }}>{loadingPage ? '加载中…' : '下一页'}</Button>
       </View>}
-      {selectionMode && selectedTopics.length > 0 && <Button className='topic-batch-delete bottom ui-button' hoverClass='row-press'
-        disabled={deleting} onClick={() => setBatchDeleteOpen(true)}>删除已选主题（{selectedTopics.length}）</Button>}
     </View>}
     {error && !loading && <Action secondary onClick={() => setReload((value) => value + 1)}>重新加载</Action>}
-    {deleteTarget && <Sheet title='确认删除主题？' onClose={() => setDeleteTarget(undefined)}>
-      <Text className='body-copy'>「{deleteTarget.title}」会从你的题库移除，已有学习记录仍会保留。</Text>
-      <View className='topic-delete-actions'>
-        <Action secondary disabled={deleting} onClick={() => setDeleteTarget(undefined)}>先保留</Action>
-        <Action disabled={deleting} onClick={() => { void deleteTopic() }}>{deleting ? '正在删除…' : '确认删除'}</Action>
+    {redoPickerOpen && <Sheet title='重新做题' onClose={() => setRedoPickerOpen(false)}>
+      <View className='topic-redo-list'>
+        {selectedTopics.map((topic) => <ComicRow key={topic.topicKey} onClick={() => {
+          setRedoPickerOpen(false)
+          onRedo(topic)
+        }}>{topic.title}</ComicRow>)}
       </View>
     </Sheet>}
-    {batchDeleteOpen && <Sheet title={`删除 ${selectedTopics.length} 个主题？`} onClose={() => { if (!deleting) setBatchDeleteOpen(false) }}>
+    {confirmDeleteOpen && <Sheet title={`删除 ${selectedTopics.length} 个主题？`} onClose={() => { if (!deleting) setConfirmDeleteOpen(false) }}>
       <Text className='body-copy'>选中的主题将从题库移除，已有学习记录会保留。</Text>
       <View className='topic-delete-actions'>
-        <Action secondary disabled={deleting} onClick={() => setBatchDeleteOpen(false)}>先保留</Action>
+        <Action secondary disabled={deleting} onClick={() => setConfirmDeleteOpen(false)}>先保留</Action>
         <Action disabled={deleting} onClick={() => { void deleteSelectedTopics() }}>{deleting ? '正在删除…' : `确认删除 ${selectedTopics.length} 个`}</Action>
       </View>
     </Sheet>}
